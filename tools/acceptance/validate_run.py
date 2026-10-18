@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Validate every record of a recorded agent run (M1 acceptance A).
+
+    python3 tools/acceptance/validate_run.py RUN_DIR [--min-span-s 600] [--json OUT]
+
+Scope: resource.jsonl, syscall.jsonl and health.jsonl in RUN_DIR.
+Checks, without skipping anything:
+  * every line is newline-terminated, strict UTF-8, a JSON object, and valid
+    against schemas/telemetry.v1.json (processpulse.validate, incl. cross-field rules);
+  * resource framing: sample_begin / proc* / sample_end with matching seq,
+    emitted == number of proc records, seq strictly increasing;
+  * one syscall_snapshot and one health record per sample, aligned by seq;
+  * collection span (first sample_begin -> last sample_end) >= --min-span-s;
+  * the collector's own stream was clean: the agent filters invalid collector
+    lines, so their counters (schema/framing/malformed/...) must all be 0.
+Loss and gap counters are reported separately: schema validity does not imply
+that no telemetry was lost.
+Exit 0 iff every check passes.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from processpulse.validate import Validator  # noqa: E402
+
+FILES = ("resource.jsonl", "syscall.jsonl", "health.jsonl")
+STREAM_CLEAN = ("schema_errors", "framing_errors", "malformed_json", "invalid_utf8",
+                "oversize_lines", "partial_tail", "not_object")
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def read_records(path, v, report):
+    stats = {"lines": 0, "valid": 0, "invalid": 0, "unterminated_tail": 0, "bytes": os.path.getsize(path)}
+    errors, records = [], []
+    with open(path, "rb") as f:
+        data = f.read()
+    lines = data.split(b"\n")
+    if lines and lines[-1] != b"":
+        stats["unterminated_tail"] = 1
+        errors.append("file does not end with a newline (truncated record)")
+    for i, raw in enumerate(lines[:-1] if lines else []):
+        stats["lines"] += 1
+        try:
+            rec = json.loads(raw.decode("utf-8", errors="strict"))
+            errs = v.errors(rec)
+        except (UnicodeDecodeError, ValueError) as e:
+            rec, errs = None, [f"{type(e).__name__}: {e}"]
+        if errs:
+            stats["invalid"] += 1
+            if len(errors) < 20:
+                errors.append(f"line {i + 1}: {errs[:3]}")
+        else:
+            stats["valid"] += 1
+            records.append(rec)
+    stats["sha256"] = sha256(path)
+    report["files"][os.path.basename(path)] = stats
+    report["errors"].extend(f"{os.path.basename(path)}: {e}" for e in errors)
+    return records
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run_dir")
+    ap.add_argument("--min-span-s", type=float, default=600.0)
+    ap.add_argument("--json", default=None, help="write the report here")
+    args = ap.parse_args()
+
+    v = Validator()
+    report = {"run_dir": os.path.abspath(args.run_dir), "files": {}, "errors": [], "checks": {}}
+    recs = {name: read_records(os.path.join(args.run_dir, name), v, report) for name in FILES}
+
+    # Resource framing.
+    samples, cur, framing = [], None, []
+    for r in recs["resource.jsonl"]:
+        t = r["type"]
+        if t == "sample_begin":
+            if cur is not None:
+                framing.append(f"seq {cur['seq']}: begin before end")
+            cur = {"seq": r["seq"], "begin": r, "procs": 0}
+        elif t == "proc":
+            if cur is None or r["seq"] != cur["seq"]:
+                framing.append(f"proc seq {r['seq']} outside its sample")
+            else:
+                cur["procs"] += 1
+        elif t == "sample_end":
+            if cur is None or r["seq"] != cur["seq"]:
+                framing.append(f"end seq {r['seq']} without begin")
+            elif r["emitted"] != cur["procs"]:
+                framing.append(f"seq {r['seq']}: emitted {r['emitted']} != {cur['procs']} procs")
+            else:
+                cur["end"] = r
+                samples.append(cur)
+            cur = None
+        else:
+            framing.append(f"unexpected type {t} in resource.jsonl")
+    if cur is not None:
+        framing.append(f"seq {cur['seq']}: run ends inside a sample")
+    seqs = [s["seq"] for s in samples]
+    if seqs != sorted(set(seqs)):
+        framing.append("sample seq not strictly increasing")
+    report["checks"]["resource_framing"] = {"ok": not framing, "samples": len(samples),
+                                            "problems": framing[:20]}
+
+    # Stream alignment.
+    snap_seqs = [s["resource_seq"] for s in recs["syscall.jsonl"]]
+    health_seqs = [h["seq"] for h in recs["health.jsonl"]]
+    report["checks"]["alignment"] = {"ok": snap_seqs == seqs and health_seqs == seqs,
+                                     "samples": len(seqs), "snapshots": len(snap_seqs),
+                                     "health": len(health_seqs)}
+
+    # Collection span (CLOCK_MONOTONIC, from the records themselves).
+    span_s = ((samples[-1]["end"]["t_mono_ns"] - samples[0]["begin"]["t_mono_ns"]) / 1e9
+              if samples else 0.0)
+    report["checks"]["span"] = {"ok": span_s >= args.min_span_s, "span_s": round(span_s, 3),
+                                "required_s": args.min_span_s}
+
+    # The collector stream itself must have been clean (agent filters bad lines).
+    last_health = recs["health.jsonl"][-1] if recs["health.jsonl"] else None
+    res = last_health["resource"] if last_health else {}
+    dirty = {k: res.get(k) for k in STREAM_CLEAN if res.get(k)}
+    report["checks"]["collector_stream_clean"] = {"ok": last_health is not None and not dirty,
+                                                  "nonzero": dirty}
+
+    # Loss / gap counters (reported, not part of schema validity).
+    ends = [s["end"] for s in samples]
+    snaps = recs["syscall.jsonl"]
+    loss = {
+        "resource_dropped_samples": res.get("dropped_samples"),
+        "resource_restarts": res.get("restarts"),
+        "proc_gone_total": sum(e["gone"] for e in ends),
+        "proc_denied_total": sum(e["denied"] for e in ends),
+        "proc_parse_errors_total": sum(e["parse_errors"] for e in ends),
+        "proc_read_errors_total": sum(e["read_errors"] for e in ends),
+        "max_late_ms": round(max((e["late_ns"] for e in ends), default=0) / 1e6, 3),
+        "max_sample_dur_ms": round(max((e["dur_ns"] for e in ends), default=0) / 1e6, 3),
+    }
+    if snaps:
+        h = snaps[-1]["health"]
+        loss.update({f"bpf_{k}": h[k] for k in ("counts_map_full", "info_map_full",
+                                                 "unresolved_events", "self_excluded_events",
+                                                 "exit_events", "reclaimed", "map_entries")})
+        loss["bpf_max_snapshot_ms"] = round(max(s["health"]["snapshot_ns"] for s in snaps) / 1e6, 3)
+    report["loss_counters"] = loss
+
+    totals = {k: sum(f[k] for f in report["files"].values()) for k in ("lines", "valid", "invalid")}
+    report["totals"] = totals
+    schema_ok = totals["invalid"] == 0 and all(f["unterminated_tail"] == 0
+                                               for f in report["files"].values())
+    report["checks"]["schema"] = {"ok": schema_ok}
+    report["ok"] = all(c["ok"] for c in report["checks"].values())
+
+    text = json.dumps(report, indent=2)
+    print(text)
+    if args.json:
+        with open(args.json, "w") as f:
+            f.write(text + "\n")
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

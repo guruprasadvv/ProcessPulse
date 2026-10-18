@@ -1,0 +1,138 @@
+{
+  "reps": 10,
+  "ok": true,
+  "configs": [
+    {
+      "config": "test_exact_entry_counts[openat-1]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1,
+      "observed": [
+        1
+      ],
+      "median_time_s": 8.498,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[open-1]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1,
+      "observed": [
+        1
+      ],
+      "median_time_s": 0.031,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[execve-1]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1,
+      "observed": [
+        1
+      ],
+      "median_time_s": 0.032,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[clone-1]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1,
+      "observed": [
+        1
+      ],
+      "median_time_s": 0.033,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[openat-1000]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1000,
+      "observed": [
+        1000
+      ],
+      "median_time_s": 0.036,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[open-1000]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1000,
+      "observed": [
+        1000
+      ],
+      "median_time_s": 0.034,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[execve-1000]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1000,
+      "observed": [
+        1000
+      ],
+      "median_time_s": 0.038,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts[clone-1000]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 1000,
+      "observed": [
+        1000
+      ],
+      "median_time_s": 0.413,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts_100000[openat]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 100000,
+      "observed": [
+        100000
+      ],
+      "median_time_s": 0.369,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts_100000[execve]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 100000,
+      "observed": [
+        100000
+      ],
+      "median_time_s": 0.373,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_entry_counts_100000[clone]",
+      "runs": 10,
+      "exact": 10,
+      "expected": 100000,
+      "observed": [
+        100000
+      ],
+      "median_time_s": 41.323,
+      "failures": [],
+      "ok": true
+    }
+  ]
+}

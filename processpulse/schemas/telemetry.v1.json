@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://processpulse.local/schemas/telemetry.v1.json",
+  "title": "ProcessPulse-C telemetry records, schema version 1",
+  "description": "One JSON object per line. Producers: C collector (sample_begin, proc, sample_end) and the Python agent (syscall_snapshot, health). Missing values are null plus an *_err code; never 0.",
+  "oneOf": [
+    {"$ref": "#/$defs/sample_begin"},
+    {"$ref": "#/$defs/proc"},
+    {"$ref": "#/$defs/sample_end"},
+    {"$ref": "#/$defs/syscall_snapshot"},
+    {"$ref": "#/$defs/health"}
+  ],
+  "$defs": {
+    "u64": {"type": "integer", "minimum": 0},
+    "mono_ns": {
+      "description": "CLOCK_MONOTONIC nanoseconds (C clock_gettime / Python time.monotonic_ns). Comparable across producers on one boot.",
+      "type": "integer", "minimum": 0
+    },
+    "err_or_null": {"type": ["string", "null"], "enum": ["EACCES", "ENOENT", "ESRCH", "EPARSE", "EIO", "UNSUPPORTED", null]},
+    "u64_or_null": {"type": ["integer", "null"], "minimum": 0},
+    "boot_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+
+    "process_key": {
+      "description": "Process identity: boot, distro PID namespace, thread-group id in that namespace, normalized start time (USER_HZ ticks since boot).",
+      "type": "object",
+      "required": ["boot_id", "pidns_ino", "tgid", "start_ticks"],
+      "additionalProperties": false,
+      "properties": {
+        "boot_id": {"$ref": "#/$defs/boot_id"},
+        "pidns_ino": {"type": "integer", "minimum": 1},
+        "tgid": {"type": "integer", "minimum": 1},
+        "start_ticks": {"$ref": "#/$defs/u64"}
+      }
+    },
+
+    "container_identity": {
+      "description": "Container attribution from the cgroup v2 path. attribution=docker only when the path matches a Docker scope; host when it matches no container pattern; unknown when the cgroup could not be resolved.",
+      "type": "object",
+      "required": ["cgroup_id", "cgroup_path", "container_id", "runtime", "attribution", "stale"],
+      "additionalProperties": false,
+      "properties": {
+        "cgroup_id": {"$ref": "#/$defs/u64_or_null"},
+        "cgroup_path": {"type": ["string", "null"]},
+        "container_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "runtime": {"type": ["string", "null"], "enum": ["docker", null]},
+        "attribution": {"enum": ["docker", "host", "unknown"]},
+        "stale": {"type": "boolean"}
+      }
+    },
+
+    "sample_begin": {
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "t_wall_ns", "clk_tck", "page_size", "boot_id", "pidns_ino", "euid", "collector_pid"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "sample_begin"},
+        "v": {"const": 1},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "t_wall_ns": {"$ref": "#/$defs/u64"},
+        "clk_tck": {"type": "integer", "minimum": 1},
+        "page_size": {"type": "integer", "minimum": 1},
+        "boot_id": {"$ref": "#/$defs/boot_id"},
+        "pidns_ino": {"type": "integer", "minimum": 1},
+        "euid": {"$ref": "#/$defs/u64"},
+        "collector_pid": {"type": "integer", "minimum": 1}
+      }
+    },
+
+    "proc": {
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "pid", "comm", "comm_utf8_valid", "comm_truncated",
+                   "state", "ppid", "starttime_ticks", "utime", "stime", "num_threads",
+                   "rss_kb", "rss_err", "uid_real", "uid_eff", "uid_err",
+                   "vol_ctxsw", "nonvol_ctxsw", "ctxsw_err", "io", "io_err",
+                   "fd_count", "fd_err", "cgroup", "cgroup_err", "partial"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "proc"},
+        "v": {"const": 1},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "pid": {"type": "integer", "minimum": 1},
+        "comm": {"type": "string"},
+        "comm_utf8_valid": {"type": "boolean"},
+        "comm_truncated": {"type": "boolean"},
+        "state": {"type": "string", "pattern": "^[A-Za-z?]$"},
+        "ppid": {"type": "integer", "minimum": 0},
+        "starttime_ticks": {"$ref": "#/$defs/u64"},
+        "utime": {"$ref": "#/$defs/u64"},
+        "stime": {"$ref": "#/$defs/u64"},
+        "num_threads": {"$ref": "#/$defs/u64"},
+        "rss_kb": {"$ref": "#/$defs/u64_or_null"},
+        "rss_err": {"$ref": "#/$defs/err_or_null"},
+        "uid_real": {"$ref": "#/$defs/u64_or_null"},
+        "uid_eff": {"$ref": "#/$defs/u64_or_null"},
+        "uid_err": {"$ref": "#/$defs/err_or_null"},
+        "vol_ctxsw": {"$ref": "#/$defs/u64_or_null"},
+        "nonvol_ctxsw": {"$ref": "#/$defs/u64_or_null"},
+        "ctxsw_err": {"$ref": "#/$defs/err_or_null"},
+        "io": {
+          "type": ["object", "null"],
+          "required": ["rchar", "wchar", "syscr", "syscw", "read_bytes", "write_bytes", "cancelled_write_bytes"],
+          "additionalProperties": false,
+          "properties": {
+            "rchar": {"$ref": "#/$defs/u64"},
+            "wchar": {"$ref": "#/$defs/u64"},
+            "syscr": {"$ref": "#/$defs/u64"},
+            "syscw": {"$ref": "#/$defs/u64"},
+            "read_bytes": {"$ref": "#/$defs/u64"},
+            "write_bytes": {"$ref": "#/$defs/u64"},
+            "cancelled_write_bytes": {"$ref": "#/$defs/u64"}
+          }
+        },
+        "io_err": {"$ref": "#/$defs/err_or_null"},
+        "fd_count": {"$ref": "#/$defs/u64_or_null"},
+        "fd_err": {"$ref": "#/$defs/err_or_null"},
+        "cgroup": {"type": ["string", "null"]},
+        "cgroup_err": {"$ref": "#/$defs/err_or_null"},
+        "partial": {"type": "boolean"}
+      }
+    },
+
+    "sample_end": {
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "dur_ns", "pids_seen", "emitted", "gone", "denied",
+                   "parse_errors", "read_errors", "io_denied", "fd_denied", "late_ns", "readdir_err"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "sample_end"},
+        "v": {"const": 1},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "dur_ns": {"$ref": "#/$defs/u64"},
+        "pids_seen": {"$ref": "#/$defs/u64"},
+        "emitted": {"$ref": "#/$defs/u64"},
+        "gone": {"$ref": "#/$defs/u64"},
+        "denied": {"$ref": "#/$defs/u64"},
+        "parse_errors": {"$ref": "#/$defs/u64"},
+        "read_errors": {"$ref": "#/$defs/u64"},
+        "io_denied": {"$ref": "#/$defs/u64"},
+        "fd_denied": {"$ref": "#/$defs/u64"},
+        "late_ns": {"$ref": "#/$defs/u64"},
+        "readdir_err": {"$ref": "#/$defs/err_or_null"}
+      }
+    },
+
+    "syscall_counts": {
+      "description": "Cumulative syscall-ENTRY counts (attempts, not successes) since the probe attached. Never reset.",
+      "type": "object",
+      "required": ["execve", "execveat", "open", "openat", "openat2", "clone", "clone3", "fork", "vfork"],
+      "additionalProperties": false,
+      "properties": {
+        "execve": {"$ref": "#/$defs/u64"}, "execveat": {"$ref": "#/$defs/u64"},
+        "open": {"$ref": "#/$defs/u64"}, "openat": {"$ref": "#/$defs/u64"}, "openat2": {"$ref": "#/$defs/u64"},
+        "clone": {"$ref": "#/$defs/u64"}, "clone3": {"$ref": "#/$defs/u64"},
+        "fork": {"$ref": "#/$defs/u64"}, "vfork": {"$ref": "#/$defs/u64"}
+      }
+    },
+
+    "syscall_process": {
+      "type": "object",
+      "required": ["key", "host_tgid", "level", "container_pid", "comm", "container", "counts", "exited"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"$ref": "#/$defs/process_key"},
+        "host_tgid": {"type": "integer", "minimum": 1},
+        "level": {"type": "integer", "minimum": 0},
+        "container_pid": {"type": ["integer", "null"], "minimum": 1},
+        "comm": {"type": "string"},
+        "container": {"$ref": "#/$defs/container_identity"},
+        "counts": {"$ref": "#/$defs/syscall_counts"},
+        "exited": {"type": "boolean"}
+      }
+    },
+
+    "syscall_health": {
+      "type": "object",
+      "required": ["map_entries", "map_capacity", "counts_map_full", "info_map_full", "unresolved_events",
+                   "self_excluded_events", "exit_events", "reclaimed", "snapshot_ns"],
+      "additionalProperties": false,
+      "properties": {
+        "map_entries": {"$ref": "#/$defs/u64"},
+        "map_capacity": {"type": "integer", "minimum": 1},
+        "counts_map_full": {"$ref": "#/$defs/u64"},
+        "info_map_full": {"$ref": "#/$defs/u64"},
+        "unresolved_events": {"$ref": "#/$defs/u64"},
+        "self_excluded_events": {"$ref": "#/$defs/u64"},
+        "exit_events": {"$ref": "#/$defs/u64"},
+        "reclaimed": {"$ref": "#/$defs/u64"},
+        "snapshot_ns": {"$ref": "#/$defs/u64"}
+      }
+    },
+
+    "syscall_snapshot": {
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "interval_ns", "resource_seq", "probe", "calibration", "procs", "health"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "syscall_snapshot"},
+        "v": {"const": 1},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "interval_ns": {"$ref": "#/$defs/u64_or_null"},
+        "resource_seq": {"$ref": "#/$defs/u64_or_null"},
+        "probe": {
+          "type": "object",
+          "required": ["mode", "syscalls", "attached_since_mono_ns"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {"const": "per_syscall_tracepoints"},
+            "syscalls": {"type": "array", "items": {"type": "string"}},
+            "attached_since_mono_ns": {"$ref": "#/$defs/mono_ns"}
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "required": ["boot_id", "distro_level", "distro_pidns_ino"],
+          "additionalProperties": false,
+          "properties": {
+            "boot_id": {"$ref": "#/$defs/boot_id"},
+            "distro_level": {"type": "integer", "minimum": 0},
+            "distro_pidns_ino": {"type": "integer", "minimum": 1}
+          }
+        },
+        "procs": {"type": "array", "items": {"$ref": "#/$defs/syscall_process"}},
+        "health": {"$ref": "#/$defs/syscall_health"}
+      }
+    },
+
+    "health": {
+      "description": "Agent-level collector health, one record per resource sample.",
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "resource", "syscall", "alignment_skew_ns"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "health"},
+        "v": {"const": 1},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "resource": {
+          "type": "object",
+          "required": ["alive", "epoch", "restarts", "last_exit_code", "lines", "malformed_json", "invalid_utf8",
+                       "oversize_lines", "partial_tail", "not_object", "schema_errors", "framing_errors",
+                       "dropped_samples", "samples"],
+          "additionalProperties": false,
+          "properties": {
+            "alive": {"type": "boolean"},
+            "epoch": {"$ref": "#/$defs/u64"},
+            "restarts": {"$ref": "#/$defs/u64"},
+            "last_exit_code": {"type": ["integer", "null"]},
+            "lines": {"$ref": "#/$defs/u64"},
+            "malformed_json": {"$ref": "#/$defs/u64"},
+            "invalid_utf8": {"$ref": "#/$defs/u64"},
+            "oversize_lines": {"$ref": "#/$defs/u64"},
+            "partial_tail": {"$ref": "#/$defs/u64"},
+            "not_object": {"$ref": "#/$defs/u64"},
+            "schema_errors": {"$ref": "#/$defs/u64"},
+            "framing_errors": {"$ref": "#/$defs/u64"},
+            "dropped_samples": {"$ref": "#/$defs/u64"},
+            "samples": {"$ref": "#/$defs/u64"}
+          }
+        },
+        "syscall": {
+          "type": "object",
+          "required": ["available", "reason"],
+          "additionalProperties": false,
+          "properties": {
+            "available": {"type": "boolean"},
+            "reason": {"type": ["string", "null"]}
+          }
+        },
+        "alignment_skew_ns": {"type": ["integer", "null"]}
+      }
+    }
+  }
+}

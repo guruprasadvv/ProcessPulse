@@ -2,7 +2,27 @@
 
 Explainable Behavioral Anomaly Detection for Containerized Applications.
 
-**Current milestone: M0** — Linux process collector (snapshot).
+**Current milestone: M1 complete (2026-10-19)** — telemetry foundations: streaming /proc
+collector (schema v1) and BCC syscall collector; acceptance evidence in
+[results/acceptance/m1/README.md](results/acceptance/m1/README.md). Next: M1b (network
+telemetry, syscall bigrams, privilege-escalation signals). Architecture, contracts and
+milestones: [CLAUDE.md](CLAUDE.md). Verified history: [ENGINEERING_CHANGELOG.md](ENGINEERING_CHANGELOG.md).
+
+### M1 quick start (WSL2 Ubuntu)
+
+```sh
+make all helpers test-c        # collector, static test helper, C unit tests
+make test                      # unprivileged pytest suite
+./collector --v1 --count 2 --interval-ms 500    # schema v1 samples
+sudo python3 -m processpulse.preflight          # BCC/tracepoint/header checks
+sudo python3 -m processpulse.agent --duration 10 # record both streams to results/raw/
+```
+
+Privileged tests: as root, `PYTHONUSERBASE=/home/<user>/.local make test-privileged`.
+Python 3.12 environment for the ML layer: `tools/setup_py312_env.sh`.
+
+The sections below describe the original M0 snapshot mode, which `./collector`
+without arguments still provides.
 
 ## Prerequisites
 

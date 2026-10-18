@@ -1,0 +1,26 @@
+{
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.14.4",
+  "nproc": 16,
+  "clk_tck": 100,
+  "cpu_model": "AMD Ryzen 7 5700U with Radeon Graphics",
+  "mem_total_kb": 7026332,
+  "window_s": 30.0,
+  "reps": 5,
+  "workloads": [
+    "idle",
+    "cpu",
+    "churn"
+  ],
+  "intervals_ms": [
+    250,
+    1000,
+    5000
+  ],
+  "bpf_stats_enabled_original": "0",
+  "raw_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/overhead-20261018T210714",
+  "started_wall": "2026-10-18T21:07:14+0000",
+  "order": "for rep: for workload: [baseline], then intervals 250/1000/5000",
+  "bpf_stats_enabled_restored": "0",
+  "finished_wall": "2026-10-18T21:40:53+0000"
+}

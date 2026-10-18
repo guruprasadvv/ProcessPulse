@@ -1,0 +1,11 @@
+{
+  "out": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1-10min-20261018T205546",
+  "counts": {
+    "samples": 613,
+    "snapshots": 613
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  }
+}

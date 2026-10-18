@@ -1,0 +1,575 @@
+{
+  "instrumented_runs": 45,
+  "cells": [
+    {
+      "workload": "idle",
+      "interval_ms": 250,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 2.967,
+        "iqr": 0.067
+      },
+      "agent_cpu_pct": {
+        "median": 1.767,
+        "iqr": 0.0
+      },
+      "collector_cpu_pct": {
+        "median": 1.167,
+        "iqr": 0.033
+      },
+      "bpf_cpu_pct": {
+        "median": 0.0336,
+        "iqr": 0.0016
+      },
+      "bpf_ns_per_event": {
+        "median": 504.3,
+        "iqr": 6.8
+      },
+      "agent_hwm_kb": {
+        "median": 220428,
+        "iqr": 124.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 218580,
+        "iqr": 28.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.891,
+        "iqr": 0.106
+      },
+      "max_late_ms": {
+        "median": 0.725,
+        "iqr": 0.133
+      },
+      "median_snapshot_ms": {
+        "median": 0.285,
+        "iqr": 0.011
+      },
+      "throughput": {
+        "median": null,
+        "iqr": null
+      },
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "idle",
+      "interval_ms": 1000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 0.8,
+        "iqr": 0.033
+      },
+      "agent_cpu_pct": {
+        "median": 0.5,
+        "iqr": 0.033
+      },
+      "collector_cpu_pct": {
+        "median": 0.267,
+        "iqr": 0.033
+      },
+      "bpf_cpu_pct": {
+        "median": 0.0115,
+        "iqr": 0.0019
+      },
+      "bpf_ns_per_event": {
+        "median": 527.9,
+        "iqr": 11.4
+      },
+      "agent_hwm_kb": {
+        "median": 220556,
+        "iqr": 228.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 218588,
+        "iqr": 132.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.891,
+        "iqr": 0.108
+      },
+      "max_late_ms": {
+        "median": 0.62,
+        "iqr": 0.058
+      },
+      "median_snapshot_ms": {
+        "median": 0.308,
+        "iqr": 0.002
+      },
+      "throughput": {
+        "median": null,
+        "iqr": null
+      },
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "idle",
+      "interval_ms": 5000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 0.233,
+        "iqr": 0.0
+      },
+      "agent_cpu_pct": {
+        "median": 0.2,
+        "iqr": 0.0
+      },
+      "collector_cpu_pct": {
+        "median": 0.033,
+        "iqr": 0.0
+      },
+      "bpf_cpu_pct": {
+        "median": 0.0073,
+        "iqr": 0.0006
+      },
+      "bpf_ns_per_event": {
+        "median": 680.5,
+        "iqr": 50.5
+      },
+      "agent_hwm_kb": {
+        "median": 220492,
+        "iqr": 168.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 4.0
+      },
+      "agent_rss_kb": {
+        "median": 218576,
+        "iqr": 8.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 4.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.94,
+        "iqr": 0.074
+      },
+      "max_late_ms": {
+        "median": 0.611,
+        "iqr": 0.067
+      },
+      "median_snapshot_ms": {
+        "median": 0.378,
+        "iqr": 0.064
+      },
+      "throughput": {
+        "median": null,
+        "iqr": null
+      },
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "cpu",
+      "interval_ms": 250,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 2.964,
+        "iqr": 0.0
+      },
+      "agent_cpu_pct": {
+        "median": 1.765,
+        "iqr": 0.033
+      },
+      "collector_cpu_pct": {
+        "median": 1.166,
+        "iqr": 0.033
+      },
+      "bpf_cpu_pct": {
+        "median": 0.0327,
+        "iqr": 0.003
+      },
+      "bpf_ns_per_event": {
+        "median": 491.8,
+        "iqr": 33.2
+      },
+      "agent_hwm_kb": {
+        "median": 220460,
+        "iqr": 124.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 218592,
+        "iqr": 36.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.872,
+        "iqr": 0.254
+      },
+      "max_late_ms": {
+        "median": 0.706,
+        "iqr": 0.01
+      },
+      "median_snapshot_ms": {
+        "median": 0.289,
+        "iqr": 0.006
+      },
+      "throughput": {
+        "median": 350898.7775,
+        "iqr": 1463.0245
+      },
+      "baseline_throughput_median": 367598.11,
+      "throughput_change_pct": -4.54,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "cpu",
+      "interval_ms": 1000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 0.766,
+        "iqr": 0.033
+      },
+      "agent_cpu_pct": {
+        "median": 0.5,
+        "iqr": 0.034
+      },
+      "collector_cpu_pct": {
+        "median": 0.3,
+        "iqr": 0.034
+      },
+      "bpf_cpu_pct": {
+        "median": 0.011,
+        "iqr": 0.0024
+      },
+      "bpf_ns_per_event": {
+        "median": 560.1,
+        "iqr": 3.8
+      },
+      "agent_hwm_kb": {
+        "median": 220508,
+        "iqr": 84.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 218588,
+        "iqr": 28.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.954,
+        "iqr": 0.289
+      },
+      "max_late_ms": {
+        "median": 0.531,
+        "iqr": 0.079
+      },
+      "median_snapshot_ms": {
+        "median": 0.325,
+        "iqr": 0.02
+      },
+      "throughput": {
+        "median": 340851.401,
+        "iqr": 2606.889
+      },
+      "baseline_throughput_median": 367598.11,
+      "throughput_change_pct": -7.28,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "cpu",
+      "interval_ms": 5000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 0.233,
+        "iqr": 0.066
+      },
+      "agent_cpu_pct": {
+        "median": 0.167,
+        "iqr": 0.033
+      },
+      "collector_cpu_pct": {
+        "median": 0.067,
+        "iqr": 0.034
+      },
+      "bpf_cpu_pct": {
+        "median": 0.0054,
+        "iqr": 0.0021
+      },
+      "bpf_ns_per_event": {
+        "median": 679.2,
+        "iqr": 33.7
+      },
+      "agent_hwm_kb": {
+        "median": 220544,
+        "iqr": 32.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 218560,
+        "iqr": 88.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.889,
+        "iqr": 0.255
+      },
+      "max_late_ms": {
+        "median": 0.276,
+        "iqr": 0.151
+      },
+      "median_snapshot_ms": {
+        "median": 0.396,
+        "iqr": 0.216
+      },
+      "throughput": {
+        "median": 344039.8402,
+        "iqr": 3055.3719
+      },
+      "baseline_throughput_median": 367598.11,
+      "throughput_change_pct": -6.41,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "churn",
+      "interval_ms": 250,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 10.992,
+        "iqr": 0.098
+      },
+      "agent_cpu_pct": {
+        "median": 9.893,
+        "iqr": 0.065
+      },
+      "collector_cpu_pct": {
+        "median": 1.066,
+        "iqr": 0.033
+      },
+      "bpf_cpu_pct": {
+        "median": 1.4171,
+        "iqr": 0.0036
+      },
+      "bpf_ns_per_event": {
+        "median": 2255.6,
+        "iqr": 28.3
+      },
+      "agent_hwm_kb": {
+        "median": 220440,
+        "iqr": 176.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 219932,
+        "iqr": 288.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.656,
+        "iqr": 0.043
+      },
+      "max_late_ms": {
+        "median": 0.253,
+        "iqr": 0.056
+      },
+      "median_snapshot_ms": {
+        "median": 9.811,
+        "iqr": 0.18
+      },
+      "throughput": {
+        "median": 930.6153,
+        "iqr": 17.3352
+      },
+      "baseline_throughput_median": 1032.55,
+      "throughput_change_pct": -9.87,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "churn",
+      "interval_ms": 1000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 10.326,
+        "iqr": 0.133
+      },
+      "agent_cpu_pct": {
+        "median": 10.026,
+        "iqr": 0.099
+      },
+      "collector_cpu_pct": {
+        "median": 0.266,
+        "iqr": 0.0
+      },
+      "bpf_cpu_pct": {
+        "median": 1.418,
+        "iqr": 0.0467
+      },
+      "bpf_ns_per_event": {
+        "median": 2469.7,
+        "iqr": 133.2
+      },
+      "agent_hwm_kb": {
+        "median": 222304,
+        "iqr": 180.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 222304,
+        "iqr": 180.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.505,
+        "iqr": 0.291
+      },
+      "max_late_ms": {
+        "median": 0.213,
+        "iqr": 0.04
+      },
+      "median_snapshot_ms": {
+        "median": 44.182,
+        "iqr": 0.354
+      },
+      "throughput": {
+        "median": 928.5274,
+        "iqr": 10.7752
+      },
+      "baseline_throughput_median": 1032.55,
+      "throughput_change_pct": -10.07,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    },
+    {
+      "workload": "churn",
+      "interval_ms": 5000,
+      "reps": 5,
+      "total_user_cpu_pct": {
+        "median": 8.861,
+        "iqr": 0.199
+      },
+      "agent_cpu_pct": {
+        "median": 8.827,
+        "iqr": 0.166
+      },
+      "collector_cpu_pct": {
+        "median": 0.067,
+        "iqr": 0.034
+      },
+      "bpf_cpu_pct": {
+        "median": 1.4315,
+        "iqr": 0.0237
+      },
+      "bpf_ns_per_event": {
+        "median": 2505.8,
+        "iqr": 104.8
+      },
+      "agent_hwm_kb": {
+        "median": 234564,
+        "iqr": 12.0
+      },
+      "collector_hwm_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "agent_rss_kb": {
+        "median": 234564,
+        "iqr": 12.0
+      },
+      "collector_rss_kb": {
+        "median": 1996,
+        "iqr": 0.0
+      },
+      "median_sample_dur_ms": {
+        "median": 2.617,
+        "iqr": 0.06
+      },
+      "max_late_ms": {
+        "median": 0.188,
+        "iqr": 0.038
+      },
+      "median_snapshot_ms": {
+        "median": 255.623,
+        "iqr": 7.191
+      },
+      "throughput": {
+        "median": 932.1307,
+        "iqr": 3.2232
+      },
+      "baseline_throughput_median": 1032.55,
+      "throughput_change_pct": -9.73,
+      "loss": {
+        "dropped_samples": 0,
+        "counts_map_full": 0
+      },
+      "agent_rc_nonzero": 0
+    }
+  ]
+}

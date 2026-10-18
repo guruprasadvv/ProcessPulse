@@ -1,0 +1,5 @@
+# Python 3.12 environment (D-14): test tooling for the stdlib-only telemetry
+# package. Pinned to the versions verified in this environment; see
+# ENGINEERING_CHANGELOG.md for the date and the `uv pip freeze` output.
+pytest==8.4.2
+jsonschema==4.25.1

@@ -1,0 +1,41 @@
+{
+  "run_id": "m1-10min-20261018T205546",
+  "schema_version": 1,
+  "started_wall": 1792356946.8628838,
+  "duration_mono_ns": 620101240761,
+  "boot_id": "67e98c24-2662-4762-91e1-f8afc13c1cc4",
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.14.4",
+  "git_head": "67af42d8915aa6fb7364ee86a201f7dc64f3d1ea",
+  "config": {
+    "interval_ms": 1000,
+    "duration_s": 3600.0,
+    "use_bpf": true,
+    "collector": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/collector",
+    "max_procs": 16384
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  },
+  "counts": {
+    "samples": 613,
+    "snapshots": 613
+  },
+  "resource_stats": {
+    "alive": false,
+    "epoch": 0,
+    "restarts": 0,
+    "last_exit_code": 0,
+    "schema_errors": 0,
+    "framing_errors": 0,
+    "dropped_samples": 0,
+    "samples": 613,
+    "lines": 26577,
+    "malformed_json": 0,
+    "invalid_utf8": 0,
+    "oversize_lines": 0,
+    "partial_tail": 0,
+    "not_object": 0
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "run_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1-10min-20261018T205546",
+  "files": {
+    "resource.jsonl": {
+      "lines": 26577,
+      "valid": 26577,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 14598416,
+      "sha256": "e54cbae5c54c666dcfd35c95e8b223f661ee79e575d1931dc5775909ea64964d"
+    },
+    "syscall.jsonl": {
+      "lines": 613,
+      "valid": 613,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 10684450,
+      "sha256": "4345a2ec520b95b2b9c62b33638fb7981a85ee461463d24f57297a4b2c82b603"
+    },
+    "health.jsonl": {
+      "lines": 613,
+      "valid": 613,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 228208,
+      "sha256": "7210aad5b1144ecfd63a54d2d9cf4bc3ba929c755f9b5efc7a395a00547d0f7a"
+    }
+  },
+  "errors": [],
+  "checks": {
+    "resource_framing": {
+      "ok": true,
+      "samples": 613,
+      "problems": []
+    },
+    "alignment": {
+      "ok": true,
+      "samples": 613,
+      "snapshots": 613,
+      "health": 613
+    },
+    "span": {
+      "ok": true,
+      "span_s": 612.004,
+      "required_s": 600.0
+    },
+    "collector_stream_clean": {
+      "ok": true,
+      "nonzero": {}
+    },
+    "schema": {
+      "ok": true
+    }
+  },
+  "loss_counters": {
+    "resource_dropped_samples": 0,
+    "resource_restarts": 0,
+    "proc_gone_total": 337,
+    "proc_denied_total": 0,
+    "proc_parse_errors_total": 0,
+    "proc_read_errors_total": 0,
+    "max_late_ms": 1.121,
+    "max_sample_dur_ms": 113.225,
+    "bpf_counts_map_full": 0,
+    "bpf_info_map_full": 0,
+    "bpf_unresolved_events": 9070,
+    "bpf_self_excluded_events": 127902,
+    "bpf_exit_events": 959772,
+    "bpf_reclaimed": 9277,
+    "bpf_map_entries": 20,
+    "bpf_max_snapshot_ms": 107.059
+  },
+  "totals": {
+    "lines": 27803,
+    "valid": 27803,
+    "invalid": 0
+  },
+  "ok": true
+}

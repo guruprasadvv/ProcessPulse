@@ -1,0 +1,49 @@
+command: python3 -m processpulse.agent --duration 3600 --interval-ms 1000 --out /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1-10min-20261018T205546
+start_wall: 2026-10-18T20:55:46+00:00
+agent_pid: 694
+2026-10-18T20:56:01+00:00 alive elapsed_s=7 resource_bytes=141769
+2026-10-18T20:56:16+00:00 alive elapsed_s=22 resource_bytes=473679
+2026-10-18T20:56:31+00:00 alive elapsed_s=37 resource_bytes=771682
+2026-10-18T20:56:46+00:00 alive elapsed_s=52 resource_bytes=1104319
+2026-10-18T20:57:02+00:00 alive elapsed_s=68 resource_bytes=1458201
+2026-10-18T20:57:17+00:00 alive elapsed_s=83 resource_bytes=1786239
+2026-10-18T20:57:32+00:00 alive elapsed_s=98 resource_bytes=2115087
+2026-10-18T20:57:47+00:00 alive elapsed_s=113 resource_bytes=2446925
+2026-10-18T20:58:02+00:00 alive elapsed_s=128 resource_bytes=2779361
+2026-10-18T20:58:17+00:00 alive elapsed_s=143 resource_bytes=3166010
+2026-10-18T20:58:32+00:00 alive elapsed_s=158 resource_bytes=3546855
+2026-10-18T20:58:47+00:00 alive elapsed_s=173 resource_bytes=3936839
+2026-10-18T20:59:02+00:00 alive elapsed_s=188 resource_bytes=4324522
+2026-10-18T20:59:17+00:00 alive elapsed_s=203 resource_bytes=4703405
+2026-10-18T20:59:33+00:00 alive elapsed_s=219 resource_bytes=5117092
+2026-10-18T20:59:48+00:00 alive elapsed_s=234 resource_bytes=5500668
+2026-10-18T21:00:04+00:00 alive elapsed_s=250 resource_bytes=5890759
+2026-10-18T21:00:19+00:00 alive elapsed_s=265 resource_bytes=6323488
+2026-10-18T21:00:34+00:00 alive elapsed_s=280 resource_bytes=6704048
+2026-10-18T21:00:49+00:00 alive elapsed_s=295 resource_bytes=7088003
+2026-10-18T21:01:04+00:00 alive elapsed_s=310 resource_bytes=7478308
+2026-10-18T21:01:19+00:00 alive elapsed_s=326 resource_bytes=7865331
+2026-10-18T21:01:35+00:00 alive elapsed_s=341 resource_bytes=8277641
+2026-10-18T21:01:50+00:00 alive elapsed_s=356 resource_bytes=8659435
+2026-10-18T21:02:05+00:00 alive elapsed_s=371 resource_bytes=9000874
+2026-10-18T21:02:20+00:00 alive elapsed_s=386 resource_bytes=9334924
+2026-10-18T21:02:35+00:00 alive elapsed_s=401 resource_bytes=9700264
+2026-10-18T21:02:50+00:00 alive elapsed_s=416 resource_bytes=10049121
+2026-10-18T21:03:05+00:00 alive elapsed_s=431 resource_bytes=10383194
+2026-10-18T21:03:20+00:00 alive elapsed_s=446 resource_bytes=10756731
+2026-10-18T21:03:35+00:00 alive elapsed_s=461 resource_bytes=11122511
+2026-10-18T21:03:50+00:00 alive elapsed_s=476 resource_bytes=11527179
+2026-10-18T21:04:05+00:00 alive elapsed_s=491 resource_bytes=11923080
+2026-10-18T21:04:20+00:00 alive elapsed_s=506 resource_bytes=12252180
+2026-10-18T21:04:35+00:00 alive elapsed_s=521 resource_bytes=12581143
+2026-10-18T21:04:50+00:00 alive elapsed_s=536 resource_bytes=12917569
+2026-10-18T21:05:05+00:00 alive elapsed_s=552 resource_bytes=13249453
+2026-10-18T21:05:21+00:00 alive elapsed_s=567 resource_bytes=13604445
+2026-10-18T21:05:36+00:00 alive elapsed_s=582 resource_bytes=13935178
+2026-10-18T21:05:51+00:00 alive elapsed_s=597 resource_bytes=14264819
+2026-10-18T21:06:06+00:00 alive elapsed_s=612 resource_bytes=14598416
+sending SIGTERM at 2026-10-18T21:06:06+00:00
+agent rc=0 end_wall=2026-10-18T21:06:07+00:00
+leftover collector processes: 0
+raw_run_dir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1-10min-20261018T205546
+RESULT: PASS (validator rc=0)

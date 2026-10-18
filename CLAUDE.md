@@ -27,8 +27,10 @@ Never describe a [PLANNED] item as working.
 | M0 known defects | D1 comm containing `\n` drops the process (fgets); D2 bytes ≥0x80 emitted raw (invalid UTF-8); D3 `%lu` accepts `-1`; D4 unit tests exercise a Python mirror, not the C parser; D5 comm truncated at 31 bytes; D6 collection gaps invisible / exit 0 on failure; D7 readdir errors not distinguished; D8 min-record test always skipped in WSL; D9 doc inaccuracies; D10 stdout fully buffered. To be fixed test-first in M1. |
 | eBPF feasibility (BCC, per-syscall tracepoint, map counting, PID attribution, cleanup) | [VERIFIED 2026-10-19] `tools/bpf_smoke.py`: tests A–F pass, 2 runs × 3 iterations + error-path iteration. |
 | Docker runtime in the distro | [VERIFIED 2026-10-19] docker.io 29.1.3, cgroup v2, systemd driver; container processes visible in distro `/proc` with nested pidns. |
-| Docker *attribution* | [PLANNED] — not implemented until **DIT-1** (§9) passes three consecutive runs. |
-| M1 … M7 | [PLANNED] — see §11. |
+| M0 defects D1–D6 | [IMPLEMENTED 2026-10-19] fixed test-first in M1 (whole-file reads, UTF-8-safe escaping, strict number parsing, C unit tests, gap counters, exit codes). D7 fixed for v1 (`readdir_err`). D8–D10 remain as documented. |
+| M1 telemetry foundations | **[VERIFIED 2026-10-19] M1 accepted.** `collector --v1`, schema v1 + validator, framing, resource supervisor, BCC syscall collector (calibration, identity, exit reclaim, health), preflight, agent. Acceptance: 10-minute run 27 803/27 803 lines valid over 612 s; exact counts 110/110 over 10 repetitions; start_ticks 1000/1000; overhead matrix 45/45 measured. [LIMITATION] workload-throughput impact not attributable (run-order confound). Evidence: `results/acceptance/m1/README.md`. |
+| Docker *attribution* | [VERIFIED 2026-10-19] **DIT-1 passed three consecutive runs (7/7 checks each).** Limits: PID reuse is checked by key semantics, not forced physically; M1 has no feature windows, so "final window exited" is checked as the snapshot's `exited` flag. |
+| M1b … M7 | [PLANNED] — see §11. |
 
 ## 2. Approved decisions (authoritative — do not reopen)
 
@@ -90,6 +92,11 @@ host processes ────┤ (shared kernel)
   Stdlib only beyond BCC. Code must remain Python 3.12-compatible.
 - **ML / offline layer** (M2+): Python **3.12** virtual environment; dependencies
   pinned in `requirements/`. It consumes recorded JSONL and never imports BCC.
+  Created by `tools/setup_py312_env.sh` (user-level `uv`; CPython 3.12.15 at
+  `~/.venvs/processpulse-py312`), because Ubuntu 26.04 has no python3.12 package.
+- **Tests:** `make test` (unprivileged; also run it with the 3.12 venv's python).
+  Privileged: as root, `PYTHONUSERBASE=/home/<user>/.local make test-privileged`
+  (root's python has no pytest; the user-level pytest is reused, nothing installed).
 - **Kernel headers for BCC:** provided by the `kheaders` module
   (`/sys/kernel/kheaders.tar.xz`). It does **not** persist across WSL restarts;
   the agent preflight attempts `modprobe kheaders` (root only) and reports the
@@ -272,7 +279,7 @@ baseline exists; measured results are kept separate from goals.
 | MS | Scope | Entry | Measurable acceptance |
 |---|---|---|---|
 | M0 | Existing snapshot collector | — | 20 pass / 1 documented skip; zero warnings; defects recorded. **Met.** |
-| M1 | Telemetry foundations: C v1 streaming schema, BCC process-level syscall counts (execve/openat/clone families), agent, identity, health, preflight | M0 committed | 100% schema-valid lines over a 10-min run; exact count deltas for N ∈ {1, 1000, 100000} per family in 10/10 runs; start_ticks equal for 1000/1000 spawned processes; 0 misattributions; unresolved counted; **DIT-1 passes 3 consecutive runs**; overhead measured (3 workloads × 3 intervals × 5 reps, median/IQR). |
+| M1 | Telemetry foundations: C v1 streaming schema, BCC process-level syscall counts (execve/openat/clone families), agent, identity, health, preflight | M0 committed | 100% schema-valid lines over a 10-min run; exact count deltas for N ∈ {1, 1000, 100000} per family in 10/10 runs; start_ticks equal for 1000/1000 spawned processes; 0 misattributions; unresolved counted; **DIT-1 passes 3 consecutive runs**; overhead measured (3 workloads × 3 intervals × 5 reps, median/IQR). **Met 2026-10-19.** |
 | M1b | Network telemetry, syscall bigrams, privilege-escalation signals | M1 accepted | §6 tests; exact bigram counts for a known sequence; uid/euid change and setuid-family counts verified. |
 | M2 | Feature engineering (cleaning, normalization, noise filtering, frequency, temporal, sequence, container aggregates) | M1 (+M1b for those features) | Byte-identical golden-file output; tests for counter reset, zero-length window, gaps, PID reuse, ephemeral processes, stale data; feature schema and `T` versioned. |
 | M3 | Datasets and the three attack simulations | M2, DIT-1 passed | ≥3 benign workload types; each scenario ≥5 runs; manifests complete; run-grouped splits; reproducible summaries within a pre-registered tolerance; safety review. |
@@ -302,7 +309,8 @@ baseline exists; measured results are kept separate from goals.
 ## Appendix A — PPT traceability (compact; full rationale in the reviewed matrix)
 
 Format: `ID | slide | requirement | MS | status`. Status: P = [PLANNED],
-Pa = partial, F = feasibility verified only, U = [UNRESOLVED], X = descoped (D-7),
+V = verified with M1 acceptance evidence (2026-10-19), Pa = partial (M1 part verified,
+later milestones pending), F = feasibility verified only, U = [UNRESOLVED], X = descoped (D-7),
 C = context/doc. 110 identified requirements = 106 IDs + 4 justified links;
 PPT-085/086 are grouping rows.
 
@@ -316,10 +324,10 @@ PPT-085/086 are grouping rows.
 007|2|Survey container security + XAI literature (slide-5 headings linked)|M1|Pa
 008|2|Identify interpretability gap|M1|Pa
 009|2|Combine syscall analysis with explainable ML|M1,M4,M5|P
-010|3|Namespaces/cgroups -> container identity|M1|P
-011|3|Shared host kernel -> host-side observation|M1|F
-012|3|System calls reveal behavior|M1|F
-013|3|Resource use reveals behavior|M0,M1|Pa
+010|3|Namespaces/cgroups -> container identity|M1|V (DIT-1)
+011|3|Shared host kernel -> host-side observation|M1|V (DIT-1)
+012|3|System calls reveal behavior|M1|V (syscall telemetry; features M2)
+013|3|Resource use reveals behavior|M0,M1|V (resource telemetry; features M2)
 014|3|Network activity reveals behavior|M1b|P
 015|3|Baseline profiles enable detection|M3,M4|P
 016|3|ML detects subtle deviations (high-dim telemetry)|M4|P
@@ -351,7 +359,7 @@ PPT-085/086 are grouping rows.
 041|7|Obj02 features from syscalls + resource use|M2|P
 042|7|Obj03 ML detection for containers|M2,M4|P
 043|7|Obj04 explainable alerts for root-cause analysis|M5,M6|P
-044|8|Syscalls via eBPF|M1|F
+044|8|Syscalls via eBPF|M1|V
 045|8|Resource metrics via eBPF -> C /proc (D-1)|M1|P
 046|8|Network activity via eBPF|M1b|P
 047|8|Preprocessing: cleaning|M2|P
@@ -366,9 +374,9 @@ PPT-085/086 are grouping rows.
 088|8|Human-readable LIME evidence|M5,M6|P
 056|8|Alert output: context for analyst review|M6|P
 057|8|Two-phase method|all|P
-058|9|Docker runtime layer|M1,M3|F
+058|9|Docker runtime layer|M1,M3|Pa (DIT-1; M3 workloads pending)
 089|9|Kubernetes runtime|-|X
-059|9|Telemetry collectors module|M1|F
+059|9|Telemetry collectors module|M1|V
 060|9|Profiles|M2,M4|P
 090|9|Temporal encoding|M2|P
 061|9|"ML classifier" -> IF + threshold (D-2)|M4|P
@@ -395,10 +403,10 @@ PPT-085/086 are grouping rows.
 078|11|Contribution: eBPF + interpretable ML workflow|M7|P
 079|11|Contribution: modular real-time architecture, human-readable evidence|M1-M6|P
 080|11|Contribution: accuracy + transparency|M7|P
-081|11|Plan01 implementation: probes, features, ML integration|M1,M2,M4|F
+081|11|Plan01 implementation: probes, features, ML integration|M1,M2,M4|Pa (probes done)
 082|11|Plan02 dataset: benign + simulated attacks|M3|P
 083|11|Plan03 experiments: accuracy, explanations|M7|P
-095|11|Plan03 experiments: overhead|M1,M7|P
+095|11|Plan03 experiments: overhead|M1,M7|Pa (M1 matrix measured; M7 pending)
 084|11|Plan04 refinement from empirical findings|M7|P
 085.1-085.7|12|Literature refs [1]-[7] (Abed, Combe, Lin, Creech&Hu, Du, Ribeiro, Lundberg&Lee)|M1|P (DOIs unverified)
 086.1-086.6|12|Tool refs [8]-[13] (Falco, eBPF.io, Docker security, K8s security, SHAP, LIME)|M1|P (URLs unverified)
