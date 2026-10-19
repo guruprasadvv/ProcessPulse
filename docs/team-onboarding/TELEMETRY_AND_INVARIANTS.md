@@ -24,7 +24,7 @@ is **awaiting review**.
   findings. The widest possible `bpf_bigrams` record was measured at 62,739
   bytes (S2.6 evidence).
 - **Additive extensions:** the bigram fields (decision U1) and the network
-  fields (N6, uncommitted) were added without bumping `v`. They are present
+  fields (N6; WIP branch, not accepted) were added without bumping `v`. They are present
   **iff** their capability is selected, so a counts-only v2 stream keeps
   exactly the S0 shape.
 
@@ -34,7 +34,7 @@ is **awaiting review**.
 |---|---|---|
 | **Counts** | `counts` | cumulative count of syscall **entries** (attempts, not successes) per process and syscall, for 9 syscalls |
 | **Bigrams** | `bigrams` (requires counts, U9) | cumulative count of the pair (previous observed call or marker, observed call) per process. Example: `{"a": "openat", "b": "openat", "n": 42}` |
-| **Network** (uncommitted) | `net` (requires counts, N3) | per process and socket class: connect/accept results and coarse destination classes; per process: syscall entries observed |
+| **Network** (WIP branch, not accepted) | `net` (requires counts, N3) | per process and socket class: connect/accept results and coarse destination classes; per process: syscall entries observed |
 
 Counters are **cumulative and never reset** within an *epoch* (one load of
 the BPF program). Deltas and rates are computed downstream from Δcounter /
@@ -118,7 +118,7 @@ For each observed entry *s* of process *K*:
 | before arming (U2a) | recorded | lost | +1 | `pre_arm_events`, `bigram_dropped` | unchanged |
 | ok | recorded | recorded | — | — | *s* |
 
-### R-NLOSS (network; S3 plan §5; S3.2 implementation, uncommitted)
+### R-NLOSS (network; S3 plan §5; S3.2 implementation on branch `wip/s3.2-network`)
 
 Per hook invocation, counted in `nhealth` per syscall:
 1. `seen_*` is incremented first, before any lookup;

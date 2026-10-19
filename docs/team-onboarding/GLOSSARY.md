@@ -50,7 +50,7 @@ are grouped by topic; *(planned)* marks roadmap concepts with no code yet.
 - **Unified BPF program:** since S1, one compiled program contains every
   enabled capability, selected with `-DPPC_CAP_<NAME>` flags.
 - **Capability:** a selectable part of that program: `counts`, `bigrams`,
-  `net` (S3.1/S3.2, uncommitted). `priv` is reserved.
+  `net` (S3.1/S3.2, on branch `wip/s3.2-network`, not accepted). `priv` is reserved.
 - **Detach:** removing a program from its tracepoint while keeping its
   maps. This is step 1 of the final drain.
 
@@ -150,6 +150,21 @@ are grouped by topic; *(planned)* marks roadmap concepts with no code yet.
   and marks the rest unavailable.
 - **Acceptance evidence:** saved outputs under `results/acceptance/` that
   back every claim.
+
+## Git and GitHub workflow
+
+- **`master`:** the main branch on GitHub. It holds committed work, and
+  only the owner merges into it.
+- **`wip/s3.2-network`:** the work-in-progress branch holding the unfinished,
+  **not accepted** S3.1/S3.2 network capability.
+- **Task branch:** your own branch for one task (`<name>/<task>`), created
+  from `master` or from the WIP branch.
+- **Draft pull request (PR):** a proposal to merge your branch. "Draft"
+  means it is not ready and can't be merged by accident. Teammates review
+  and comment there.
+- **History rewrite / hash map:** on 2026-10-19 every commit hash changed
+  once (only commit messages were edited). `docs/commit-hash-map.md`
+  translates the old hashes that older documents cite.
 
 ## Machine learning and explanations *(planned, M4–M5)*
 

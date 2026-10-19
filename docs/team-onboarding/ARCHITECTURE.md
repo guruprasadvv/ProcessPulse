@@ -2,8 +2,9 @@
 
 [← Onboarding index](README.md) · prev: [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) · next: [GLOSSARY.md](GLOSSARY.md)
 
-This describes what **exists in the repository** (committed through
-`699c2c8`, plus the uncommitted S3.1/S3.2 network work, which is marked).
+This describes what **exists in the repository**: everything on `master`
+(through S2.6), plus the S3.1/S3.2 network work, which is only on branch `wip/s3.2-network`
+(not merged, not accepted) and is marked as such.
 Planned layers are listed at the end and clearly labelled. The deep design
 references are [`docs/bpf-collector.md`](../bpf-collector.md) and
 [`docs/telemetry-v2.md`](../telemetry-v2.md).
@@ -84,7 +85,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
 - **One BCC compilation per start, plus calibration.** Exactly 2 per start
   (tested). `build_source()` concatenates:
   `common.h` → `bigrams.bpf.c` (if enabled) → `syscall_counter.bpf.c` →
-  `net.bpf.c` (if enabled, uncommitted) → `core.bpf.c` → generated
+  `net.bpf.c` (if enabled; WIP branch) → `core.bpf.c` → generated
   per-syscall probes.
 - **Capabilities** (`CAPABILITIES`, `REQUIRES`, `check_capabilities()`):
 
@@ -92,7 +93,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
   |---|---|---|---|---|
   | `counts` | `syscall_counter.bpf.c` | — | 9 `sys_enter_*` (+ 2 sched hooks shared) | committed |
   | `bigrams` | `bigrams.bpf.c` | counts (U9) | none | committed |
-  | `net` | `net.bpf.c` | counts (N3) | 6 connect/accept/accept4 entry+exit | **uncommitted** |
+  | `net` | `net.bpf.c` | counts (N3) | 6 connect/accept/accept4 entry+exit | **WIP branch, not accepted** |
   | `priv` | — | — | — | reserved, refused |
 
 - **Scheduler hooks** (`core.bpf.c`): `sched_process_exit` deletes the
@@ -101,7 +102,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
   `sched_process_exec` refreshes comm/cgroup and handles a non-leader exec.
 - **Maps:** listed in [`docs/bpf-collector.md`](../bpf-collector.md), with
   measured memory. For example, `bigrams` is 12.0 MiB at 131,072 entries;
-  `netc` is 6.5 MiB and `net_stash` 3.25 MiB at 32,768 each (uncommitted).
+  `netc` is 6.5 MiB and `net_stash` 3.25 MiB at 32,768 each (WIP branch).
 - **Boundary:** the BPF side keeps cumulative counters only. Deltas, rates
   and features are always computed downstream.
 
@@ -119,7 +120,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
   - **Why the barrier matters:** without it, a probe that had already passed
     the exclusion check could write into a deleted entry. A preallocated map
     reuses that slot immediately, possibly for another process's counter
-    (commit `1f763de`; audit `results/acceptance/m1b/purge-race/audit/AUDIT.md`).
+    (commit `615896d`, cited in older docs as `1f763de`; audit `results/acceptance/m1b/purge-race/audit/AUDIT.md`).
 - **Exec:** the process key is unchanged across exec (the leader's start time
   is kept). Bigrams start a new segment with the `EXEC` marker.
 
@@ -150,7 +151,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
 - **v2:** `processpulse/schemas/telemetry.v2.json`: the framed BPF snapshot
   protocol.
   - Additive extensions, with `v` still 2: bigram fields (S2.1, decision U1)
-    and network fields (S3.1, decision N6, uncommitted).
+    and network fields (S3.1, decision N6; WIP branch, not accepted).
   - **Byte rule:** a record's UTF-8 bytes, without the LF, are 1..65,536,
     with no CR or LF inside (`processpulse/jsonl.py`).
 - **Validator:** `processpulse/validate.py`, stdlib only. It implements the
@@ -186,7 +187,7 @@ references are [`docs/bpf-collector.md`](../bpf-collector.md) and
   checks I-B1–I-B5
   ([TELEMETRY_AND_INVARIANTS.md](TELEMETRY_AND_INVARIANTS.md)).
 
-### Network telemetry (S3.1/S3.2, **uncommitted, not accepted**)
+### Network telemetry (S3.1/S3.2, on branch `wip/s3.2-network`, **not accepted**)
 - **Source:** `bpf/net.bpf.c`.
 - **Hooks:** `sys_{enter,exit}_{connect,accept,accept4}`. A per-thread stash
   pairs each entry with its exit.
@@ -230,4 +231,4 @@ Contracts exist in `CLAUDE.md` §7–§8. There is no code.
 | How does the drain work? | `BpfCollector.drain()` / `_drain_steps()` |
 | How are records framed and checked? | `processpulse/snapshots.py` (`V2Emitter`, `Reconstructor`) |
 | How does a run start and end? | `processpulse/agent.py` `Agent.run()`, `_final_drain()` |
-| Network (uncommitted) | `bpf/net.bpf.c`, `processpulse/net.py` |
+| Network (WIP branch `wip/s3.2-network`) | `bpf/net.bpf.c`, `processpulse/net.py` |

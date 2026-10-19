@@ -8,42 +8,55 @@ commands in [SETUP_AND_TESTING.md §3](SETUP_AND_TESTING.md#3-inspect-repository
 
 ## 1. Repository state
 
-- Branch `master`, HEAD **`699c2c8`** (S2.6). Nothing staged.
-- **Uncommitted, tracked files modified:**
-  - `CLAUDE.md`, `ENGINEERING_CHANGELOG.md`;
-  - `bpf/core.bpf.c`;
-  - `docs/bpf-collector.md`, `docs/telemetry-v2.md`;
+GitHub (private): https://github.com/guruprasadvv/ProcessPulse.
+
+| Branch | Contents | Status |
+|---|---|---|
+| `master` | M0 → S2.6, the onboarding package, the S3 network plan, `docs/commit-hash-map.md` | committed; **the only branch the owner merges into** |
+| `wip/s3.2-network` (`5b6231b`) | `master` as of the S3.2 push, plus the S3.1/S3.2 code and its evidence (see §3) | **not merged, not accepted** |
+
+- **History rewrite:** on 2026-10-19 the history was rewritten once, to
+  remove an AI co-author line from the commit messages. Files, authors and
+  dates are unchanged, but every hash changed. Older documents
+  (`CLAUDE.md`, the changelog, evidence READMEs and recorded manifests)
+  cite the old hashes. Translate them with
+  [`docs/commit-hash-map.md`](../commit-hash-map.md).
+- **What the S3.1/S3.2 commit contains:**
+  - modified files: `CLAUDE.md`, `ENGINEERING_CHANGELOG.md`,
+    `bpf/core.bpf.c`, `docs/bpf-collector.md`, `docs/telemetry-v2.md`;
   - `processpulse/agent.py`, `bpf_collector.py`, `schemas/telemetry.v2.json`,
     `snapshots.py`, `validate.py`, `vocab.py`;
   - `tests/snapshot_fakes.py`, `tests/test_agent_bigrams.py`,
-    `tests/test_bpf_collector_unit.py`.
-- **Untracked, new:**
-  - `bpf/net.bpf.c`, `processpulse/net.py`;
-  - `tests/test_net_unit.py`, `tests/test_net_bpf.py`,
-    `tests/helpers/net_helper.py`;
-  - `docs/m1b-s3-network-plan.md`, `results/acceptance/m1b/s3-plan/`,
-    `results/acceptance/m1b/s3.2/`;
-  - this onboarding package.
-- **Untracked on purpose (never stage):** the 15 M1 evidence logs.
-  `results/raw/` is gitignored.
+    `tests/test_bpf_collector_unit.py`;
+  - new files: `bpf/net.bpf.c`, `processpulse/net.py`,
+    `tests/test_net_unit.py`, `tests/test_net_bpf.py`,
+    `tests/helpers/net_helper.py`, `results/acceptance/m1b/s3-plan/`,
+    `results/acceptance/m1b/s3.2/`.
+- **The owner's machine only:** the same S3.1/S3.2 changes are also
+  uncommitted in the owner's working tree, together with the 15 intentional
+  M1 evidence logs (never staged, not in git). `results/raw/` is
+  gitignored everywhere.
 
 ## 2. Accepted and committed
 
-| Milestone | Commit | Accepted? |
-|---|---|---|
-| M0 | `795c945` | accepted with documented defects (D8–D10 open) |
-| M1 | `3df5819` | **accepted** (`results/acceptance/m1/`) |
-| M1b S0 | `d9b9e9b` | accepted |
-| M1b S1 | `391c988` | committed |
-| M1b S2.1–S2.4 | `5f0d376` | committed |
-| Purge-race fix | `1f763de` | committed |
-| M1b S2.5 | `d1d7eac` | committed (formally accepted, per the owner) |
-| M1b S2.6 | `699c2c8` | committed (accepted, per the owner, with the strict startup policy) |
+| Milestone | Commit | Old hash (in older docs) | Accepted? |
+|---|---|---|---|
+| M0 | `a1be2b9` | `795c945` | accepted with documented defects (D8–D10 open) |
+| M1 | `1256d0d` | `3df5819` | **accepted** (`results/acceptance/m1/`) |
+| M1b S0 | `610702a` | `d9b9e9b` | accepted |
+| M1b S1 | `4346fab` | `391c988` | committed |
+| M1b S2.1–S2.4 | `d1ff507` | `5f0d376` | committed |
+| Purge-race fix | `615896d` | `1f763de` | committed |
+| M1b S2.5 | `ecbe7d2` | `d1d7eac` | committed (formally accepted, per the owner) |
+| M1b S2.6 | `5a45db3` | `699c2c8` | committed (accepted, per the owner, with the strict startup policy) |
 
 M1b as a whole is **not** complete: network (S3.x), privilege signals and
 the final M1b acceptance (S7 in the old plan) are still open.
 
 ## 3. Implemented but not accepted: S3.1/S3.2 (network: connect/accept)
+
+**Where:** branch `wip/s3.2-network` (`5b6231b`). The evidence paths below
+exist only on that branch.
 
 **Status: NOT READY FOR REVIEW.** Verification checklist on the **final**
 code:
@@ -117,17 +130,25 @@ code:
    verification runs listed under blockers, then write the results into
    `results/acceptance/m1b/s3.2/README.md` and the changelog.
 2. The owner decides on the plan §11 items.
-3. Only then: review → commit S3.1/S3.2 (authorization required).
+3. Only then: review → the owner merges `wip/s3.2-network` into `master`
+   through a pull request (authorization required).
 4. Then plan S3.3 (needs explicit approval).
 
 ## Documentation conflicts
 
 These existing documents disagree with the repository state. They were
 **not** changed by this package:
-- [`README.md`](../../README.md) says "Current milestone: M1 complete" and
-  "Schema v2 (M1b stage S0, uncommitted)". S0–S2.6 are committed. Its
-  M0-era sections (prerequisites, limitations, project structure) describe
-  the M0 layout only.
+- [`README.md`](../../README.md): below a short current-status note at its
+  top, the body still says "Current milestone: M1 complete" and "Schema v2
+  (M1b stage S0, uncommitted)". S0–S2.6 are committed. Its M0-era sections
+  (prerequisites, limitations, project structure) describe the M0 layout
+  only.
+- `CLAUDE.md` on `master` still lists S2.6 as "uncommitted, under review".
+  The newer `CLAUDE.md` on `wip/s3.2-network` has the S3.1/S3.2 row but the
+  same stale S2.6 row.
+- **Old commit hashes:** `CLAUDE.md`, the changelog, `docs/`, and
+  `results/acceptance/*` cite pre-rewrite hashes. Recorded evidence is
+  deliberately not edited; use [`docs/commit-hash-map.md`](../commit-hash-map.md).
 - [`docs/architecture.md`](../architecture.md) describes only M0: a single
   `collector.c` with no header files. The C collector has since been split
   into `procfs.c/h` and `jsonl.c/h`, and the BPF and agent layers exist.
