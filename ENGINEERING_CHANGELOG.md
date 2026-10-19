@@ -10,7 +10,8 @@ working tree but not yet in a commit.
 |---|---|---|
 | M0 | Accepted with documented defects | 2026-10-19 audit (below) |
 | M1 | **Accepted 2026-10-19** | M1 foundations + M1 acceptance (below); `results/acceptance/m1/` |
-| M1b–M7 | Not started | — |
+| M1b | S0 implemented (uncommitted); S1–S7 not started | M1b S0 (below); `results/acceptance/m1b/s0/` |
+| M2–M7 | Not started | — |
 
 ---
 
@@ -168,3 +169,110 @@ re-run for reassurance.
   3 s-window overhead run while A and B were running. Their evidence files were
   overwritten and are not counted. The overhead smoke's numbers were visibly contaminated
   by the concurrent runs, which is why C ran alone.
+
+## 2026-10-19 — M1b S0: framing rule and v2 BPF snapshot protocol (uncommitted)
+
+Scope: stage S0 of the M1b plan v3 only (decisions A1 framing, A2 snapshot
+contract D1–D6, A3 keyframe interval 60). No BPF program, kernel hook, C
+source or Makefile changed; no S1–S7 functionality.
+
+### Defect addressed
+- **F1 (M1 limitation):** 15 of 613 `syscall_snapshot` lines of the accepted M1
+  10-minute run exceed the 65,536-byte limit; the largest record is 311,053 bytes
+  without its LF (the planning reports said 311,054, which counted the LF).
+  Neither the agent writer nor `validate_run.py` checked line length. M1's
+  acceptance is not re-judged.
+
+### Changes
+- `processpulse/jsonl.py`: `MAX_RECORD_BYTES`, `line_violations()` (oversize,
+  CR, LF, empty; counted on bytes), `encode_record()` / `RecordTooLarge`. The v1
+  stream framer is unchanged (still tolerates a trailing CR).
+- **Schema v2** `processpulse/schemas/telemetry.v2.json` (new; `v: 2`):
+  `bpf_snapshot_begin`, `bpf_proc`, `bpf_reclaimed`, `bpf_snapshot_end`. Shared
+  definitions are copied verbatim from v1; `telemetry.v1.json` is unchanged
+  (sha256 `770913bf…` pinned by a test).
+- `processpulse/validate.py`: dispatch on record type to the defining schema
+  version; `maximum` keyword; v2 cross-field rules; `v2_proc_semantic_errors()`.
+- `processpulse/snapshots.py` (new): `V2Emitter` (cumulative counters per epoch,
+  changed-only emission with keyframes per the rule in "Keyframe correction"
+  below, explicit removals
+  with reason exited / self_excluded / vanished, `tracked` + per-syscall `totals`
+  mod 2^64, failed snapshots, commit after write, removal lists split to stay
+  within the byte rule) and `Reconstructor` (whole-snapshot application,
+  rejection of incomplete or inconsistent snapshots, seq-gap and epoch
+  handling, invalid-until-keyframe, "omitted = unchanged" only while valid,
+  `loss_possible`).
+- `processpulse/syscalls.py`: `track_removals` option (default off) records keys
+  deleted by exit reclaim and self-exclusion purge for `take_removed()`;
+  `last_unreported`. The v1 `syscall_snapshot` record and the BPF program are
+  unchanged; without `track_removals` nothing accumulates.
+- `processpulse/agent.py`: `--schema {1,2}`, default 1 (M1 behaviour and the M1
+  harnesses `run_10min.sh` / `overhead.py` unchanged). With 2: `bpf.jsonl`,
+  every line written through `encode_record()`, commit after write+flush,
+  failed snapshots counted, manifest `output_schema` / `bpf_stream`.
+- `tools/acceptance/validate_run.py`: per-line byte rule; v1 mode reports
+  `legacy_v1_oversize` / `legacy_v1_cr` without changing the verdict; v2 mode
+  (auto-selected by `bpf.jsonl`) enforces the rule on every line and checks
+  the snapshot protocol with the `Reconstructor`.
+- `tools/acceptance/run_s0_10min.sh` (new): T-F6 run + crash-truncation check.
+- Docs: `docs/telemetry-v2.md` (new), `CLAUDE.md` §1 and §5, `README.md`.
+
+### Validation (commands and results)
+- Baseline before any change: `make test` → 81 passed, 1 skipped.
+- Test-first: the new test modules failed at import before implementation
+  (`ImportError: cannot import name 'MAX_RECORD_BYTES'`).
+- `make test` (system Python 3.14.4; includes `test-c` 74 checks, 0 failures) →
+  201 passed, 1 skipped (M0 `test_minimum_record_count`, D8).
+- `~/.venvs/processpulse-py312/bin/python -m pytest tests/ -m "not privileged"` →
+  201 passed, 1 skipped.
+- `make check` → rc 0, no warnings.
+- As root, `PYTHONUSERBASE=/home/mypc/.local make test-privileged` → 34 passed
+  (M1: 20 syscall-collector, 7 DIT-1, 1 preflight, 1 agent; new: 1 agent v2,
+  4 snapshot/BPF), 0 leftover containers, `bpf_stats_enabled` 0. An earlier run
+  of the same suite (33 passed) preceded the `track_removals` change and is
+  superseded.
+- T-F6 `run_s0_10min.sh 600` as root: 10-minute v2 run valid (23,271 / 23,271
+  lines, longest 2,100 bytes, 616 complete snapshots, 11 keyframes, 0
+  incomplete / gaps / invalidations / mismatches, span 615.006 s). The script's
+  crash-truncation check was defective (removed nothing on an idle final
+  snapshot); fixed and re-run with `--negative-only` → truncated copy rejected
+  (rc 1). Details: `results/acceptance/m1b/s0/README.md`.
+- Recorded M1 run: validates unchanged (27,803 / 27,803) with
+  `legacy_v1_oversize = 15`.
+
+### Known limitations
+- The agent default is still schema 1; switching it is a separate decision.
+- The 10-minute v2 run was on an idle system (few processes); large
+  populations are covered by unit tests only.
+- T-F5 (C collector worst-case record < 64 KiB) is computed from source
+  constants and checked against real output; no real 4 KiB cgroup path ran.
+- The consumer has no partial recovery before a keyframe; the producer forces a
+  recovery keyframe only after its own failed scheduled keyframe or uncommitted
+  snapshot (it cannot see consumer-side losses).
+- Not run: `--abba` overhead re-check, overhead matrix for v2, DIT-1 three
+  consecutive runs (one DIT-1 pass inside the privileged suite).
+
+### Keyframe correction (review, same day, uncommitted)
+- **Defect:** the emitter used `keyframe = status ok and seq % 60 == 0`. A failed
+  seq 0 (or any failed scheduled keyframe) left no keyframe until 60 snapshots
+  later, and a test asserted that behaviour.
+- **Rule now** (`processpulse/snapshots.py`, `docs/telemetry-v2.md` §3):
+  keyframe(seq) ⇔ status ok ∧ (seq mod 60 = 0 ∨ due); `due` is set at the epoch
+  start, when a seq-mod-60 snapshot fails, and when the previous snapshot was not
+  committed; cleared only when a keyframe is committed. The cadence stays on
+  `seq mod 60`. One emitter serves one epoch (re-attach raises).
+- **Consumer:** `keyframe_schedule_violations` counts a missing required keyframe
+  (from an observed epoch start or failed scheduled keyframe, and every
+  successful seq-mod-60 snapshot), once per miss; `validate_run.py` fails on it.
+- **Approved decisions recorded:** default `--schema 1`; re-emit on any field
+  change; removal reasons `self_excluded` (distinct from exit) and `vanished`
+  (loss).
+- **Validation:** new or changed tests failed first (12 failed, 45 passed in
+  `tests/test_snapshots.py`), then `tests/test_snapshots.py`
+  `tests/test_validate_run.py` `tests/test_schemas_v2.py` → 111 passed;
+  `make test` → 213 passed, 1 skipped (74 C checks, 0 failures); py3.12 venv →
+  213 passed, 1 skipped; as root `make test-privileged` → 34 passed, 0 leftover
+  containers, `bpf_stats_enabled` 0. The recorded 10-minute v2 run was
+  re-validated with the corrected validator (not re-run; the changed emitter
+  paths, failures and uncommitted snapshots, did not occur in it): ok,
+  0 keyframe schedule violations; its truncated copy is still rejected.

@@ -1,12 +1,16 @@
-"""Stdlib-only validation of telemetry records against schemas/telemetry.v1.json.
+"""Stdlib-only validation of telemetry records against schemas/telemetry.v{1,2}.json.
 
-The JSON Schema file is the single source of truth. This module implements
-the subset of JSON Schema keywords that file uses, so the agent needs no
+The JSON Schema files are the single source of truth. This module implements
+the subset of JSON Schema keywords those files use, so the agent needs no
 third-party dependency; tests cross-check it against the `jsonschema` package.
-Records are dispatched on their "type" field to the matching $defs entry.
+Records are dispatched on their "type" field to the matching $defs entry of
+the schema version that defines that type (v1: resource/syscall/health
+records; v2: the BPF snapshot protocol). The "v" field must then match.
 
 semantic_errors() adds the cross-field rules a JSON Schema cannot express
 compactly, e.g. "a null measurement must carry an error code".
+v2_proc_semantic_errors() checks a bpf_proc against its snapshot's begin
+record (calibration), which a single-record check cannot see.
 """
 
 import json
@@ -14,6 +18,7 @@ import os
 import re
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schemas", "telemetry.v1.json")
+SCHEMA_V2_PATH = os.path.join(os.path.dirname(__file__), "schemas", "telemetry.v2.json")
 
 _TYPES = {
     "object": lambda v: isinstance(v, dict),
@@ -27,11 +32,12 @@ _TYPES = {
 
 _SUPPORTED = {
     "$schema", "$id", "$ref", "$defs", "title", "description", "type", "required",
-    "properties", "additionalProperties", "enum", "const", "minimum", "pattern",
+    "properties", "additionalProperties", "enum", "const", "minimum", "maximum", "pattern",
     "items", "oneOf",
 }
 
 RECORD_TYPES = ("sample_begin", "proc", "sample_end", "syscall_snapshot", "health")
+RECORD_TYPES_V2 = ("bpf_snapshot_begin", "bpf_proc", "bpf_reclaimed", "bpf_snapshot_end")
 
 
 def load_schema(path=SCHEMA_PATH):
@@ -40,11 +46,16 @@ def load_schema(path=SCHEMA_PATH):
 
 
 class Validator:
-    def __init__(self, schema=None):
+    def __init__(self, schema=None, schema_v2=None):
         self.schema = schema if schema is not None else load_schema()
+        self.schema_v2 = schema_v2 if schema_v2 is not None else load_schema(SCHEMA_V2_PATH)
+        self._defs_by_type = {}
+        for sch, types in ((self.schema, RECORD_TYPES), (self.schema_v2, RECORD_TYPES_V2)):
+            self._check_keywords(sch)
+            for t in types:
+                self._defs_by_type[t] = sch["$defs"]
         self.defs = self.schema["$defs"]
         self._patterns = {}
-        self._check_keywords(self.schema)
 
     def _check_keywords(self, node):
         """Rejects schema keywords this validator would silently ignore."""
@@ -67,24 +78,25 @@ class Validator:
         if not isinstance(record, dict):
             return ["record is not an object"]
         rtype = record.get("type")
-        if rtype not in RECORD_TYPES:
+        defs = self._defs_by_type.get(rtype)
+        if defs is None:
             return [f"unknown record type {rtype!r}"]
         out = []
-        self._validate(record, self.defs[rtype], rtype, out)
+        self._validate(record, defs[rtype], rtype, out, defs)
         if not out:
             out.extend(semantic_errors(record))
         return out
 
-    def _resolve(self, node):
+    def _resolve(self, node, defs):
         while "$ref" in node:
             ref = node["$ref"]
             if not ref.startswith("#/$defs/"):
                 raise ValueError(f"unsupported $ref {ref}")
-            node = self.defs[ref[len("#/$defs/"):]]
+            node = defs[ref[len("#/$defs/"):]]
         return node
 
-    def _validate(self, value, node, path, out):
-        node = self._resolve(node)
+    def _validate(self, value, node, path, out, defs):
+        node = self._resolve(node, defs)
         if "type" in node:
             types = node["type"] if isinstance(node["type"], list) else [node["type"]]
             if not any(_TYPES[t](value) for t in types):
@@ -96,6 +108,8 @@ class Validator:
             out.append(f"{path}: {value!r} not in {node['enum']}")
         if "minimum" in node and _TYPES["number"](value) and value < node["minimum"]:
             out.append(f"{path}: {value} < minimum {node['minimum']}")
+        if "maximum" in node and _TYPES["number"](value) and value > node["maximum"]:
+            out.append(f"{path}: {value} > maximum {node['maximum']}")
         if "pattern" in node and isinstance(value, str):
             rx = self._patterns.setdefault(node["pattern"], re.compile(node["pattern"]))
             if not rx.search(value):
@@ -107,12 +121,12 @@ class Validator:
             props = node.get("properties", {})
             for k, v in value.items():
                 if k in props:
-                    self._validate(v, props[k], f"{path}.{k}", out)
+                    self._validate(v, props[k], f"{path}.{k}", out, defs)
                 elif node.get("additionalProperties") is False:
                     out.append(f"{path}: unexpected field {k!r}")
         if isinstance(value, list) and "items" in node:
             for i, item in enumerate(value):
-                self._validate(item, node["items"], f"{path}[{i}]", out)
+                self._validate(item, node["items"], f"{path}[{i}]", out, defs)
 
 
 # (value field(s), error field) pairs for proc records: exactly one side is set.
@@ -141,4 +155,33 @@ def semantic_errors(record):
                 out.append(f"procs[{i}]: container_pid must be set iff level > distro_level")
             if p["key"]["pidns_ino"] != record["calibration"]["distro_pidns_ino"]:
                 out.append(f"procs[{i}]: key.pidns_ino differs from calibration")
+    elif record.get("type") == "bpf_snapshot_end":
+        if record["status"] == "ok":
+            if record["reason"] is not None or record["read_err"] is not None:
+                out.append("bpf_snapshot_end: status ok carries no reason / read_err")
+            if record["loss"] is None or record["health"] is None:
+                out.append("bpf_snapshot_end: status ok requires loss and health")
+        else:
+            if record["reason"] is None or record["read_err"] is None:
+                out.append("bpf_snapshot_end: status failed requires reason and read_err")
+            if record["loss"] is not None or record["health"] is not None:
+                out.append("bpf_snapshot_end: status failed carries no loss / health")
+            if record["procs_emitted"] or record["reclaimed_records"] or record["reclaimed_keys"]:
+                out.append("bpf_snapshot_end: status failed carries no records")
+    elif record.get("type") == "bpf_reclaimed":
+        if not record["keys"]:
+            out.append("bpf_reclaimed: keys must not be empty")
+    return out
+
+
+def v2_proc_semantic_errors(begin, proc):
+    """Cross-record rules for a bpf_proc within the snapshot opened by begin."""
+    cal = begin["calibration"]
+    out = []
+    if (proc["level"] > cal["distro_level"]) != (proc["container_pid"] is not None):
+        out.append("bpf_proc: container_pid must be set iff level > distro_level")
+    if proc["key"]["pidns_ino"] != cal["distro_pidns_ino"]:
+        out.append("bpf_proc: key.pidns_ino differs from calibration")
+    if proc["key"]["boot_id"] != cal["boot_id"]:
+        out.append("bpf_proc: key.boot_id differs from calibration")
     return out

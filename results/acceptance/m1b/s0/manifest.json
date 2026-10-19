@@ -1,0 +1,51 @@
+{
+  "run_id": "m1b-s0-10min-20261019T042927",
+  "schema_version": 1,
+  "started_wall": 1792384168.7083132,
+  "duration_mono_ns": 631053622731,
+  "boot_id": "f2fb7b35-2a7e-4c74-b2b2-35aa2d46b229",
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.14.4",
+  "git_head": "3df5819de221495b68989bf0a7608405cb3f1e3e",
+  "config": {
+    "interval_ms": 1000,
+    "duration_s": 615.0,
+    "use_bpf": true,
+    "collector": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/collector",
+    "max_procs": 16384
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  },
+  "counts": {
+    "samples": 616,
+    "snapshots": 616,
+    "failed_snapshots": 0
+  },
+  "resource_stats": {
+    "alive": false,
+    "epoch": 0,
+    "restarts": 0,
+    "last_exit_code": 0,
+    "schema_errors": 0,
+    "framing_errors": 0,
+    "dropped_samples": 0,
+    "samples": 616,
+    "lines": 21076,
+    "malformed_json": 0,
+    "invalid_utf8": 0,
+    "oversize_lines": 0,
+    "partial_tail": 0,
+    "not_object": 0
+  },
+  "output_schema": {
+    "resource": 1,
+    "health": 1,
+    "bpf": 2
+  },
+  "bpf_stream": {
+    "file": "bpf.jsonl",
+    "keyframe_interval": 60
+  }
+}

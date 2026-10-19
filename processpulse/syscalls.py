@@ -10,12 +10,20 @@ Lifecycle:
      once and reclaimed at the next snapshot if their counts did not change;
   4. close(): detaches everything.
 
+For the schema-v2 emitter (processpulse.snapshots), track_removals=True
+makes the collector remember every key it deletes from the maps (exit
+reclaim, self-exclusion purge) until take_removed() collects them. Every
+snapshot also records how many map entries it skipped because their info
+entry was missing (last_unreported). The schema-v1 snapshot record is
+unchanged, and without track_removals nothing accumulates.
+
 Requires root and BCC (python3-bpfcc); see processpulse.preflight.
 """
 
 import ctypes
 import os
 import platform
+import threading
 import time
 
 from .identity import CgroupResolver, clk_tck, own_pidns_ino, read_boot_id, start_ticks_from_ns
@@ -76,8 +84,10 @@ def family_totals(counts):
 
 
 class SyscallCollector:
-    def __init__(self, max_procs=16384, distro_inum_override=None, resolver=None):
+    def __init__(self, max_procs=16384, distro_inum_override=None, resolver=None,
+                 track_removals=False):
         self.max_procs = max_procs
+        self.track_removals = track_removals
         self.distro_inum_override = distro_inum_override   # tests: force unresolved
         self.resolver = resolver or CgroupResolver()
         self.b = None
@@ -86,6 +96,9 @@ class SyscallCollector:
         self._prev_t = None
         self._reported_exit = {}   # (start_ns, tgid) -> counts tuple at report time
         self._purged_self = 0      # events purged by exclude(), reported as self-excluded
+        self._removed = {"exited": [], "self_excluded": []}   # deleted keys not yet collected
+        self._removed_lock = threading.Lock()                  # exclude() runs on another thread
+        self.last_unreported = 0   # entries the last snapshot skipped (no info entry)
         self.boot_id = read_boot_id()
         self.ticks = clk_tck()
 
@@ -123,6 +136,24 @@ class SyscallCollector:
                         del table[k]
                     except KeyError:
                         pass
+                self._note_removed("self_excluded", (k.start_ns, k.tgid))
+
+    def _key_dict(self, key):
+        start_ns, tgid = key
+        return {"boot_id": self.boot_id, "pidns_ino": self.distro_pidns_ino,
+                "tgid": tgid, "start_ticks": start_ticks_from_ns(start_ns, self.ticks)}
+
+    def _note_removed(self, reason, key):
+        if not self.track_removals:
+            return
+        with self._removed_lock:
+            self._removed[reason].append(self._key_dict(key))
+
+    def take_removed(self):
+        """Keys deleted from the maps since the last call, by reason (for the v2 emitter)."""
+        with self._removed_lock:
+            out, self._removed = self._removed, {"exited": [], "self_excluded": []}
+        return out
 
     def unexclude(self, tgid):
         try:
@@ -172,11 +203,14 @@ class SyscallCollector:
                 infos.pop(key, None)
                 del self._reported_exit[key]
                 self.reclaimed += 1
+                self._note_removed("exited", key)
 
         procs = []
+        unreported = 0
         for key, cvals in sorted(counts.items(), key=lambda kv: kv[0][1]):
             info = infos.get(key)
             if info is None:
+                unreported += 1
                 continue   # info insert pending or map full (counted in health)
             cgroup_id, host_tgid, level, cpid, exited, comm = info
             if exited:
@@ -193,6 +227,7 @@ class SyscallCollector:
                 "exited": exited,
             })
 
+        self.last_unreported = unreported
         health = self._health()
         health.update({"map_entries": len(counts), "map_capacity": self.max_procs,
                        "reclaimed": self.reclaimed, "snapshot_ns": time.monotonic_ns() - t0})

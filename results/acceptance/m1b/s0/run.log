@@ -1,0 +1,12 @@
+command: python3 -m processpulse.agent --schema 2 --duration 615 --interval-ms 1000 --out /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1b-s0-10min-20261019T042927
+start_wall: 2026-10-19T04:29:28+00:00
+agent rc=0 end_wall=2026-10-19T04:40:00+00:00
+leftover collector processes: 0
+validate_run rc=0
+validate_run on truncated copy rc=0 (expected 1)
+raw_run_dir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1b-s0-10min-20261019T042927
+RESULT: FAIL
+negative-only check on /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1b-s0-10min-20261019T042927 at 2026-10-19T04:41:08+00:00
+truncated copy: kept 1578 of 1579 lines (cut after the final begin)
+validate_run on truncated copy rc=1 (expected 1)
+NEGATIVE RESULT: PASS

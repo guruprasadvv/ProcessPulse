@@ -30,7 +30,9 @@ Never describe a [PLANNED] item as working.
 | M0 defects D1–D6 | [IMPLEMENTED 2026-10-19] fixed test-first in M1 (whole-file reads, UTF-8-safe escaping, strict number parsing, C unit tests, gap counters, exit codes). D7 fixed for v1 (`readdir_err`). D8–D10 remain as documented. |
 | M1 telemetry foundations | **[VERIFIED 2026-10-19] M1 accepted.** `collector --v1`, schema v1 + validator, framing, resource supervisor, BCC syscall collector (calibration, identity, exit reclaim, health), preflight, agent. Acceptance: 10-minute run 27 803/27 803 lines valid over 612 s; exact counts 110/110 over 10 repetitions; start_ticks 1000/1000; overhead matrix 45/45 measured. [LIMITATION] workload-throughput impact not attributable (run-order confound). Evidence: `results/acceptance/m1/README.md`. |
 | Docker *attribution* | [VERIFIED 2026-10-19] **DIT-1 passed three consecutive runs (7/7 checks each).** Limits: PID reuse is checked by key semantics, not forced physically; M1 has no feature windows, so "final window exited" is checked as the snapshot's `exited` flag. |
-| M1b … M7 | [PLANNED] — see §11. |
+| M1 framing limitation (F1) | [LIMITATION] 15 of 613 `syscall_snapshot` lines of the accepted M1 10-minute run exceed the 65,536-byte line limit (largest record 311,053 bytes); neither the agent nor `validate_run.py` checked line length. M1's acceptance is not re-judged; v1 recordings are reported as `legacy_v1_oversize`. Fixed for schema v2 by M1b S0. |
+| M1b S0 framing + v2 BPF snapshot protocol | [IMPLEMENTED 2026-10-19, uncommitted] byte rule, `telemetry.v2.json`, versioned validator, `processpulse/snapshots.py` (emitter + reconstructor), `agent --schema 2` (opt-in; default stays 1), `validate_run.py` v2 mode. After the keyframe correction: unprivileged 213 passed / 1 skip (py3.14 and py3.12), privileged 34 passed; recorded 10-minute v2 run valid (re-validated, not re-run). Awaiting review. Evidence: `results/acceptance/m1b/s0/README.md`. |
+| M1b S1–S7, M2 … M7 | [PLANNED] — see §11. |
 
 ## 2. Approved decisions (authoritative — do not reopen)
 
@@ -107,10 +109,23 @@ host processes ────┤ (shared kernel)
 ## 5. Telemetry contracts (versioned JSON Lines)
 
 **Framing:** UTF-8, one JSON object per line, `\n`-terminated, every record has
-`"type"` and `"v"` (schema version). Max line 64 KiB. Partial trailing lines are
+`"type"` and `"v"` (schema version). Byte rule: a record (the UTF-8 bytes
+without the terminating LF) is 1..65,536 bytes and contains no CR or LF;
+counted on bytes, never characters. v2 writers enforce it; v1 recordings
+that break it are reported as legacy findings, not re-judged
+(`docs/telemetry-v2.md` §1). Partial trailing lines are
 discarded and counted. Malformed lines are counted and logged to diagnostics,
 never forwarded. Schemas live in `processpulse/schemas/*.json`; a schema change
 bumps `v` and is recorded in `ENGINEERING_CHANGELOG.md`.
+
+**BPF snapshot protocol (schema v2, `agent --schema 2`):** begin / proc* /
+reclaimed* / end per snapshot, cumulative counters per epoch, changed-only
+emission, keyframe iff status ok and (`seq % 60 == 0` or a keyframe is due:
+epoch start, failed scheduled keyframe, uncommitted previous snapshot),
+explicit removals (exited / self_excluded / vanished = loss), `tracked` and
+`totals` cross-checks, failed snapshots, commit-after-write. Consumer rules
+(when an omitted process may be read as unchanged, invalidation, rebuild at
+keyframes): `docs/telemetry-v2.md`, implemented in `processpulse/snapshots.py`.
 
 **Missing values:** `null` plus an `*_err` code (`EACCES`, `ENOENT`, `ESRCH`,
 `EPARSE`, `UNSUPPORTED`). Never substitute 0 for an unread value. Never fabricate.

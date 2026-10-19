@@ -16,7 +16,12 @@ make test                      # unprivileged pytest suite
 ./collector --v1 --count 2 --interval-ms 500    # schema v1 samples
 sudo python3 -m processpulse.preflight          # BCC/tracepoint/header checks
 sudo python3 -m processpulse.agent --duration 10 # record both streams to results/raw/
+sudo python3 -m processpulse.agent --duration 10 --schema 2   # framed v2 BPF stream (bpf.jsonl)
+python3 tools/acceptance/validate_run.py results/raw/<run> --min-span-s 0   # validate a run
 ```
+
+Schema v2 (M1b stage S0, uncommitted): 64 KiB byte rule and the framed BPF snapshot
+protocol, see [docs/telemetry-v2.md](docs/telemetry-v2.md). The agent default is still schema 1.
 
 Privileged tests: as root, `PYTHONUSERBASE=/home/<user>/.local make test-privileged`.
 Python 3.12 environment for the ML layer: `tools/setup_py312_env.sh`.

@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://processpulse.local/schemas/telemetry.v2.json",
+  "title": "ProcessPulse-C telemetry records, schema version 2 (BPF snapshot protocol)",
+  "description": "One JSON object per line, at most 65,536 UTF-8 bytes without the LF, no CR. Producer: the Python agent with --schema 2. A snapshot is bpf_snapshot_begin, bpf_proc*, bpf_reclaimed*, bpf_snapshot_end, all with one seq. Counters are cumulative since the capability epoch. Reconstruction rules: docs/telemetry-v2.md. Definitions shared with v1 are copied verbatim from telemetry.v1.json.",
+  "oneOf": [
+    {"$ref": "#/$defs/bpf_snapshot_begin"},
+    {"$ref": "#/$defs/bpf_proc"},
+    {"$ref": "#/$defs/bpf_reclaimed"},
+    {"$ref": "#/$defs/bpf_snapshot_end"}
+  ],
+  "$defs": {
+    "u64": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+    "mono_ns": {
+      "description": "CLOCK_MONOTONIC nanoseconds (C clock_gettime / Python time.monotonic_ns). Comparable across producers on one boot.",
+      "type": "integer", "minimum": 0
+    },
+    "err_or_null": {"type": ["string", "null"], "enum": ["EACCES", "ENOENT", "ESRCH", "EPARSE", "EIO", "UNSUPPORTED", null]},
+    "u64_or_null": {"type": ["integer", "null"], "minimum": 0},
+    "boot_id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+
+    "process_key": {
+      "description": "Process identity: boot, distro PID namespace, thread-group id in that namespace, normalized start time (USER_HZ ticks since boot).",
+      "type": "object",
+      "required": ["boot_id", "pidns_ino", "tgid", "start_ticks"],
+      "additionalProperties": false,
+      "properties": {
+        "boot_id": {"$ref": "#/$defs/boot_id"},
+        "pidns_ino": {"type": "integer", "minimum": 1},
+        "tgid": {"type": "integer", "minimum": 1},
+        "start_ticks": {"$ref": "#/$defs/u64"}
+      }
+    },
+
+    "container_identity": {
+      "description": "Container attribution from the cgroup v2 path. attribution=docker only when the path matches a Docker scope; host when it matches no container pattern; unknown when the cgroup could not be resolved.",
+      "type": "object",
+      "required": ["cgroup_id", "cgroup_path", "container_id", "runtime", "attribution", "stale"],
+      "additionalProperties": false,
+      "properties": {
+        "cgroup_id": {"$ref": "#/$defs/u64_or_null"},
+        "cgroup_path": {"type": ["string", "null"]},
+        "container_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "runtime": {"type": ["string", "null"], "enum": ["docker", null]},
+        "attribution": {"enum": ["docker", "host", "unknown"]},
+        "stale": {"type": "boolean"}
+      }
+    },
+
+    "syscall_counts": {
+      "description": "Cumulative syscall-ENTRY counts (attempts, not successes) since the probe attached. Never reset.",
+      "type": "object",
+      "required": ["execve", "execveat", "open", "openat", "openat2", "clone", "clone3", "fork", "vfork"],
+      "additionalProperties": false,
+      "properties": {
+        "execve": {"$ref": "#/$defs/u64"}, "execveat": {"$ref": "#/$defs/u64"},
+        "open": {"$ref": "#/$defs/u64"}, "openat": {"$ref": "#/$defs/u64"}, "openat2": {"$ref": "#/$defs/u64"},
+        "clone": {"$ref": "#/$defs/u64"}, "clone3": {"$ref": "#/$defs/u64"},
+        "fork": {"$ref": "#/$defs/u64"}, "vfork": {"$ref": "#/$defs/u64"}
+      }
+    },
+
+    "bpf_snapshot_begin": {
+      "description": "Opens snapshot seq. keyframe=true: every tracked process follows. The epoch identifies one load of the capability; counters never compare across epochs.",
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "interval_ns", "resource_seq", "keyframe", "calibration", "capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "bpf_snapshot_begin"},
+        "v": {"const": 2},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "interval_ns": {"$ref": "#/$defs/u64_or_null"},
+        "resource_seq": {"$ref": "#/$defs/u64_or_null"},
+        "keyframe": {"type": "boolean"},
+        "calibration": {
+          "type": "object",
+          "required": ["boot_id", "distro_level", "distro_pidns_ino"],
+          "additionalProperties": false,
+          "properties": {
+            "boot_id": {"$ref": "#/$defs/boot_id"},
+            "distro_level": {"type": "integer", "minimum": 0},
+            "distro_pidns_ino": {"type": "integer", "minimum": 1}
+          }
+        },
+        "capabilities": {
+          "description": "S0 has exactly one capability (the M1 syscall counters).",
+          "type": "object",
+          "required": ["counts"],
+          "additionalProperties": false,
+          "properties": {
+            "counts": {
+              "type": "object",
+              "required": ["status", "epoch", "probe"],
+              "additionalProperties": false,
+              "properties": {
+                "status": {"enum": ["ok"]},
+                "epoch": {
+                  "type": "object",
+                  "required": ["run_id", "attach_since_mono_ns"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "run_id": {"type": "string"},
+                    "attach_since_mono_ns": {"$ref": "#/$defs/mono_ns"}
+                  }
+                },
+                "probe": {
+                  "type": "object",
+                  "required": ["mode", "syscalls"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {"const": "per_syscall_tracepoints"},
+                    "syscalls": {"type": "array", "items": {"type": "string"}}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "bpf_proc": {
+      "description": "Complete cumulative state of one process (never a partial update). Emitted when new, changed or in a keyframe.",
+      "type": "object",
+      "required": ["type", "v", "seq", "key", "host_tgid", "level", "container_pid", "comm", "container", "counts", "exited"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "bpf_proc"},
+        "v": {"const": 2},
+        "seq": {"$ref": "#/$defs/u64"},
+        "key": {"$ref": "#/$defs/process_key"},
+        "host_tgid": {"type": "integer", "minimum": 1},
+        "level": {"type": "integer", "minimum": 0},
+        "container_pid": {"type": ["integer", "null"], "minimum": 1},
+        "comm": {"type": "string"},
+        "container": {"$ref": "#/$defs/container_identity"},
+        "counts": {"$ref": "#/$defs/syscall_counts"},
+        "exited": {"type": "boolean"}
+      }
+    },
+
+    "bpf_reclaimed": {
+      "description": "Keys removed from tracking in this snapshot. exited: reported exited and unchanged since (two-phase reclaim). self_excluded: purged when our own collector was excluded. vanished: disappeared without either (counted as loss).",
+      "type": "object",
+      "required": ["type", "v", "seq", "reason", "keys"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "bpf_reclaimed"},
+        "v": {"const": 2},
+        "seq": {"$ref": "#/$defs/u64"},
+        "reason": {"enum": ["exited", "self_excluded", "vanished"]},
+        "keys": {"type": "array", "items": {"$ref": "#/$defs/process_key"}}
+      }
+    },
+
+    "bpf_snapshot_end": {
+      "description": "Closes snapshot seq. tracked and totals describe the emitted state after this snapshot (totals mod 2^64). status=failed: the maps could not be read; nothing was emitted and the emitted state is unchanged.",
+      "type": "object",
+      "required": ["type", "v", "seq", "t_mono_ns", "status", "reason", "procs_emitted", "reclaimed_records", "reclaimed_keys", "tracked", "totals", "loss", "health", "read_err"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "bpf_snapshot_end"},
+        "v": {"const": 2},
+        "seq": {"$ref": "#/$defs/u64"},
+        "t_mono_ns": {"$ref": "#/$defs/mono_ns"},
+        "status": {"enum": ["ok", "failed"]},
+        "reason": {"type": ["string", "null"]},
+        "procs_emitted": {"$ref": "#/$defs/u64"},
+        "reclaimed_records": {"$ref": "#/$defs/u64"},
+        "reclaimed_keys": {"$ref": "#/$defs/u64"},
+        "tracked": {"$ref": "#/$defs/u64"},
+        "totals": {
+          "type": "object",
+          "required": ["counts"],
+          "additionalProperties": false,
+          "properties": {"counts": {"$ref": "#/$defs/syscall_counts"}}
+        },
+        "loss": {
+          "description": "Cumulative counters of events or entries that may be missing from the emitted state.",
+          "type": ["object", "null"],
+          "required": ["counts_map_full", "info_map_full", "vanished_entries"],
+          "additionalProperties": false,
+          "properties": {
+            "counts_map_full": {"$ref": "#/$defs/u64"},
+            "info_map_full": {"$ref": "#/$defs/u64"},
+            "vanished_entries": {"$ref": "#/$defs/u64"}
+          }
+        },
+        "health": {
+          "type": ["object", "null"],
+          "required": ["map_entries", "map_capacity", "unresolved_events", "self_excluded_events", "exit_events", "reclaimed", "unreported_entries", "snapshot_ns"],
+          "additionalProperties": false,
+          "properties": {
+            "map_entries": {"$ref": "#/$defs/u64"},
+            "map_capacity": {"type": "integer", "minimum": 1},
+            "unresolved_events": {"$ref": "#/$defs/u64"},
+            "self_excluded_events": {"$ref": "#/$defs/u64"},
+            "exit_events": {"$ref": "#/$defs/u64"},
+            "reclaimed": {"$ref": "#/$defs/u64"},
+            "unreported_entries": {"$ref": "#/$defs/u64"},
+            "snapshot_ns": {"$ref": "#/$defs/u64"}
+          }
+        },
+        "read_err": {"$ref": "#/$defs/err_or_null"}
+      }
+    }
+  }
+}

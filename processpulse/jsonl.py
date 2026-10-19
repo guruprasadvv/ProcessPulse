@@ -4,12 +4,51 @@ Only complete, strictly UTF-8, newline-terminated lines that decode to a JSON
 object are returned. Everything else is counted, never forwarded:
 oversize lines are skipped up to the next newline, a trailing line without a
 newline at stream end is a partial tail.
+
+The byte rule (docs/telemetry-v2.md §1): a record is the UTF-8 bytes of one
+JSON object without its terminating LF; it must be 1..MAX_RECORD_BYTES bytes
+and contain no CR or LF. v2 writers enforce it with encode_record();
+validators check each line with line_violations(). The v1 framer below
+applies the same byte limit and, unchanged from M1, tolerates a trailing CR.
 """
 
 import json
 from dataclasses import asdict, dataclass
 
 MAX_LINE_BYTES = 64 * 1024
+MAX_RECORD_BYTES = MAX_LINE_BYTES
+
+
+class RecordTooLarge(ValueError):
+    pass
+
+
+def line_violations(raw, limit=MAX_RECORD_BYTES):
+    """Byte-rule violations of one record (raw bytes without the trailing LF)."""
+    out = []
+    if not raw:
+        out.append("empty")
+    if len(raw) > limit:
+        out.append("oversize")
+    if raw.endswith(b"\r"):
+        out.append("trailing_cr")
+    elif b"\r" in raw:
+        out.append("embedded_cr")
+    if b"\n" in raw:
+        out.append("embedded_lf")
+    return out
+
+
+def encode_record(rec, limit=MAX_RECORD_BYTES):
+    """Compact ASCII JSON text for rec (without LF); raises if it breaks the byte rule."""
+    text = json.dumps(rec, separators=(",", ":"))
+    bad = line_violations(text.encode("utf-8"), limit)
+    if "oversize" in bad:
+        raise RecordTooLarge(f"{rec.get('type')} record is {len(text.encode('utf-8'))} bytes "
+                             f"(limit {limit})")
+    if bad:
+        raise ValueError(f"{rec.get('type')} record breaks the framing rule: {bad}")
+    return text
 
 
 @dataclass
