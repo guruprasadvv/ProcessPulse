@@ -274,6 +274,13 @@ counts, `pairs_lost` and the pair sum (S2.3).
 5. **Drain:** `SnapshotView.drained` reports the drained snapshot. Any later
    snapshot of the same epoch is counted in `snapshots_after_drain`,
    invalidates, and is not applied; a new epoch starts normally.
+   Producer side (S2.5): `BpfCollector.drain()` detaches the probes,
+   waits for in-flight invocations, then reads the maps twice and requires
+   the reads to be equal;
+   the one `snapshot()` allowed after it is the drained snapshot
+   (`last_snapshot_drained`; `docs/bpf-collector.md`, "Final drain"). Writing
+   `drained: true` into the end record is the S2.6 emitter's job; until then
+   no run writes it.
 6. **Loss:** `SnapshotView.pair_loss_possible` is true when `bigram_dropped`
    rose since the previous successful snapshot, `null` when it cannot be
    judged (no bigram health, or no previous value). `loss_possible` keeps its
@@ -368,6 +375,7 @@ exited) or `asserted` (a scripted helper idle outside the vocabulary). `None`
 | `check_ib2_drained` | §8.5 A | drained snapshot applied, state valid, `epoch_intact`, capability ok, no vanished entry |
 | `check_ib2_ground_truth` | ΣC′ + `purged_counts` + `counts_map_full` = N = ΣB + Σ`pairs_lost` + `purged_pairs` + `purged_pairs_lost` + `counts_map_full`, with N the observed entries counted by the script itself (v2 §4 form of I-B2) | as `check_ib2_drained`, plus a known N (only scripted helpers tracked) |
 | `check_ib2_ground_truth_scope` (S2.4) | the same equation over a closed scope of scripted processes: their entries (live or exited) plus the purge totals they caused = N | scope quiescent; `counts_map_full` did not rise (row 1 cannot be attributed to a scope); usable before the drained snapshot exists |
+| `check_ib2_drain_read` (S2.5) | the `check_ib2_drained` equation on the collector's own drained read: live C′ + reclaimed C′ + `purged_counts` = live B + live `pairs_lost` + reclaimed B + reclaimed `pairs_lost` + `purged_pairs` + `purged_pairs_lost`; live terms from the stable map read, reclaimed terms from `BpfCollector.reclaimed_totals` (values of keys reclaimed as exited) | `BpfCollector.drain()` status `drained` (all probes detached, barrier, two equal reads); bigrams selected; a pair entry without a counts entry is a FAIL |
 
 **Global-loss precondition of the exact checks (S2.4; S2.3 audit, finding 1).**
 "Zero losses" (plan v3 D13) cannot be read from the process's own

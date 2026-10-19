@@ -19,8 +19,16 @@ read_bigrams() reads the bigram map, groups the raw entries by process and
 decodes them (processpulse.bigrams); zero-count entries are dropped and
 reported (P-ZERO). bigram_health() returns the end-record health fields.
 Exit reclaim requires the counts, pairs_lost and pair sum to be unchanged
-since the exit report and deletes the key's bigram entries with it;
-exclude() purges them and adds them to the purge totals.
+since the exit report and deletes the key's bigram entries with it, adding
+the removed values to reclaimed_totals; exclude() purges them and adds them
+to the purge totals.
+
+drain() is the final drain (S2.5, decision U3): it detaches every probe but
+keeps the maps, waits for in-flight probe invocations (rcu_barrier()), then
+reads every map twice and requires the reads to be equal (H-DRAIN). It ends the
+epoch: exclude() is refused afterwards, and after a successful drain exactly
+one more snapshot() is allowed, the drained snapshot (last_snapshot_drained),
+which must read the same maps as the drain.
 
 snapshot() returns the M1 schema-v1 syscall_snapshot record (unchanged);
 exited processes are reported once and reclaimed at the next snapshot if
@@ -186,6 +194,11 @@ def calibrate(compilations=None):
         b.cleanup()
 
 
+def _tp_name(tp):
+    """'category:event' of a BCC tracepoint_fds key (BCC may use bytes)."""
+    return tp.decode() if isinstance(tp, bytes) else tp
+
+
 def family_totals(counts):
     return {fam: sum(counts[s] for s in members) for fam, members in VOCABULARY.family_map().items()}
 
@@ -202,7 +215,14 @@ class BpfCollector:
         self._arm_at_start = arm
         self.armed_boot_ns = None
         self.purged = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: self-exclusion purges
+        self.reclaimed_totals = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: exit reclaims
         self.last_bigrams = None   # bigrams: read_bigrams() result of the last snapshot()
+        self.drain_result = None   # the last drain() result
+        self.last_snapshot_drained = False   # the last snapshot() was the drained snapshot
+        self._draining = False     # drain() was called: the epoch is over
+        self._drain_state = None   # the stable read of a successful drain
+        self._drained_snapshot_taken = False
+        self._drain_lock = threading.Lock()   # serialises drain() and exclude()
         self.distro_inum_override = distro_inum_override   # tests: force unresolved
         self.resolver = resolver or CgroupResolver()
         self.track_removals = track_removals
@@ -270,7 +290,7 @@ class BpfCollector:
         """'category:event' names BCC attached (its tracepoint_fds keys may be bytes)."""
         if self.b is None:
             return []
-        return [k.decode() if isinstance(k, bytes) else k for k in self.b.tracepoint_fds]
+        return [_tp_name(k) for k in self.b.tracepoint_fds]
 
     def build_info(self):
         info = {"capabilities": list(self.capabilities), "compilations": list(self.compilations),
@@ -307,6 +327,15 @@ class BpfCollector:
 
     # --- exclusion and removal bookkeeping ---------------------------------
     def exclude(self, tgid):
+        """See _exclude(). Refused once drain() was called: the probes are (being)
+        detached and the maps hold the epoch's final values, which a purge would
+        change."""
+        with self._drain_lock:
+            if self._draining:
+                raise RuntimeError("exclude() after drain(): the epoch's maps are final")
+            self._exclude(tgid)
+
+    def _exclude(self, tgid):
         """Stops counting tgid (our own collectors) and purges entries it made
         before the exclusion took effect (e.g. the pre-exec execve of a freshly
         spawned collector), including its thread slots. Purged events stay
@@ -424,11 +453,22 @@ class BpfCollector:
         """The bpf_snapshot_end.bigram_health fields (cumulative)."""
         if not self.has_bigrams:
             raise RuntimeError("bigram_health() needs the bigrams capability")
-        h = self._health_all()
+        return self._bigram_health_from(self._health_all(), self.purged)
+
+    @staticmethod
+    def _bigram_health_from(h, purged):
         out = {k: h[k] for k in BIGRAM_HEALTH[:5]}
-        out.update({"purged_counts": self.purged["counts"], "purged_pairs": self.purged["pairs"],
-                    "purged_pairs_lost": self.purged["pairs_lost"]})
+        out.update({"purged_counts": purged["counts"], "purged_pairs": purged["pairs"],
+                    "purged_pairs_lost": purged["pairs_lost"]})
         return {k: out[k] for k in BIGRAM_HEALTH}
+
+    def _pair_items(self):
+        """(items, method) of the bigram map: one batch read, else per key (H-BATCH)."""
+        table = self.b["bigrams"]
+        try:
+            return list(table.items_lookup_batch()), "batch"
+        except Exception:                         # H-BATCH: fall back to one lookup per key
+            return list(table.items()), "items"
 
     def _read_bigrams_raw(self):
         """(result, raw): the decoded per-process tables and, per process, the raw
@@ -438,11 +478,7 @@ class BpfCollector:
         if not self.has_bigrams:
             raise RuntimeError("read_bigrams() needs the bigrams capability")
         t0 = time.monotonic_ns()
-        table = self.b["bigrams"]
-        try:
-            items, method = list(table.items_lookup_batch()), "batch"
-        except Exception:                         # H-BATCH: fall back to one lookup per key
-            items, method = list(table.items()), "items"
+        items, method = self._pair_items()
         lost = {(k.start_ns, k.tgid): v.pairs_lost for k, v in self.b["counts"].items()}
         raw = {}
         for k, v in items:
@@ -468,9 +504,177 @@ class BpfCollector:
         are dropped (P-ZERO) and counted; they are not loss."""
         return self._read_bigrams_raw()[0]
 
+    # --- final drain (S2.5, U3) ----------------------------------------------
+    def drain(self):
+        """Ends the epoch with a stable final read of every map (U3, H-DRAIN):
+
+        1. detach every tracepoint; the maps stay. Closing a probe's perf event
+           removes the program from the tracepoint's prog array
+           (perf_event_detach_bpf_prog, an RCU pointer swap); a probe that
+           cannot be detached fails the drain;
+        2. rcu_barrier(): invocations that still run from the old prog array
+           (under rcu_read_lock(), see rcu_barrier) have finished when it
+           returns, and none can start. A failure fails the drain;
+        3. read every map (and the userspace purge and reclaim totals) twice.
+           Equal reads are the drained state. Unequal reads mean something
+           wrote after step 2, against the argument above: the status is
+           "unstable", nothing is claimed, and no later read is accepted
+           without a new barrier (a retry runs steps 1-3 again).
+
+        Returns (and keeps as drain_result) {"status": "drained" | "unstable" |
+        "failed", "drained", "reason", "detached", "still_attached", "barrier",
+        "reads", "changed" (the maps whose two reads differed),
+        "detached_mono_ns", "drain_ns", "accounting"}. "accounting" (bigrams
+        only, and only when drained) holds the I-B2 terms of the stable read:
+        live keys' counts, pairs and pairs_lost, the pair entries without a
+        counts entry (orphans) and those with n = 0, plus copies of
+        reclaimed_totals, the purge totals and bigram_health; see
+        bigrams.check_ib2_drain_read. drained_processes() gives the per-key
+        values for the quiescent checkers.
+
+        The epoch is over once drain() starts: exclude() is refused. A drain
+        that did not succeed may be retried; after the drained snapshot was
+        taken it may not."""
+        if self.b is None:
+            raise RuntimeError("drain() needs a started collector")
+        with self._drain_lock:
+            if self._drained_snapshot_taken:
+                raise RuntimeError("the drained snapshot was taken: it is the epoch's last")
+            self._draining = True
+            self._drain_state = None
+            t0 = time.monotonic_ns()
+            res = {"status": "failed", "drained": False, "reason": None, "detached": [],
+                   "still_attached": [], "barrier": False, "reads": 0, "changed": [],
+                   "detached_mono_ns": None, "drain_ns": None, "accounting": None}
+            self.drain_result = res
+            res["reason"] = self._drain_steps(res)
+            if res["reason"] is None:
+                res["status"], res["drained"] = "drained", True
+            elif res["status"] != "unstable":
+                res["status"] = "failed"
+            res["drain_ns"] = time.monotonic_ns() - t0
+            return res
+
+    def _drain_steps(self, res):
+        """Steps 1-3 of drain(); returns None on success or the reason it did not
+        succeed (res["status"] is set to "unstable" for unequal reads)."""
+        order = {tp: i for i, tp in enumerate(required_tracepoints(self.capabilities))}
+        errors = []
+        for tp in sorted(self.b.tracepoint_fds, key=lambda t: order.get(_tp_name(t), len(order))):
+            try:
+                self.b.detach_tracepoint(tp)
+                res["detached"].append(_tp_name(tp))
+            except Exception as e:                  # BCC raises a bare Exception
+                errors.append(f"{_tp_name(tp)}: {e}")
+        res["still_attached"] = sorted(self.attached_tracepoints())
+        res["detached_mono_ns"] = time.monotonic_ns()
+        if errors or res["still_attached"]:
+            return f"probes still attached: {res['still_attached']} ({'; '.join(errors)})"[:300]
+        try:
+            rcu_barrier()
+        except Exception as e:
+            return f"{type(e).__name__}: {e}"[:300]
+        res["barrier"] = True
+        try:
+            first = self._read_state()
+            res["reads"] = 1
+            second = self._read_state()
+            res["reads"] = 2
+        except Exception as e:                      # a map read failed
+            return f"map read failed: {type(e).__name__}: {e}"[:300]
+        if first != second:
+            res["status"] = "unstable"
+            res["changed"] = sorted(m for m in second if second[m] != first[m])
+            return f"the two reads after the barrier differ in {res['changed']}"
+        self._drain_state = first
+        if self.has_bigrams:
+            res["accounting"] = self._drain_accounting(first)
+        return None
+
+    def _read_state(self):
+        """The complete content of every map a probe writes, and the userspace
+        totals, in a form that compares equal iff nothing changed (drain()).
+        Includes last_ktime (every counted event moves it), thread slots (prev),
+        bglobal and every health counter. `excluded` is written only by
+        userspace (exclude/unexclude) and is left out."""
+        n = len(SYSCALLS)
+        counts = sorted(((k.start_ns, k.tgid), tuple(v.c[i] for i in range(n))
+                         + ((v.pairs_lost,) if self.has_bigrams else ()))
+                        for k, v in self.b["counts"].items())
+        info = sorted(((k.start_ns, k.tgid), (v.cgroup_id, v.last_ktime, v.host_tgid, v.level,
+                                              v.container_pid, v.exited, bytes(v.comm)))
+                      for k, v in self.b["info"].items())
+        threads = sorted((tid.value, (s.thread_start_ns, s.proc.start_ns, s.proc.tgid, s.tid, s.prev))
+                         for tid, s in self.b["threads"].items())
+        state = {"counts": counts, "info": info, "threads": threads, "health": self._health_all(),
+                 "userspace": {"reclaimed": self.reclaimed, "purged_self": self._purged_self}}
+        if self.has_bigrams:
+            items, _method = self._pair_items()
+            state["bigrams"] = sorted(((k.proc.start_ns, k.proc.tgid, k.a, k.b), v.value)
+                                      for k, v in items)
+            g = self.b["bglobal"][ctypes.c_int(0)]
+            state["bglobal"] = (g.armed_boot_ns, g.last_thread_full_ns, g.armed)
+            state["userspace"].update(purged=dict(self.purged),
+                                      reclaimed_totals=dict(self.reclaimed_totals))
+        return state
+
+    def _drain_accounting(self, state):
+        """The I-B2 terms of a stable read (bigrams). Live terms come from the maps;
+        reclaimed and purged terms are copies, so a later reclaim cannot alias them."""
+        n = len(SYSCALLS)
+        live = dict(state["counts"])
+        acc = {"keys": len(live), "counts": sum(sum(v[:n]) for v in live.values()),
+               "pairs": 0, "pairs_lost": sum(v[n] for v in live.values()),
+               "orphan_entries": 0, "orphan_pairs": 0, "zero_entries": 0,
+               "reclaimed": dict(state["userspace"]["reclaimed_totals"]),
+               "purged": dict(state["userspace"]["purged"]),
+               "bigram_health": self._bigram_health_from(state["health"],
+                                                         state["userspace"]["purged"])}
+        for (start, tgid, _a, _b), value in state["bigrams"]:
+            if (start, tgid) not in live:
+                acc["orphan_entries"] += 1
+                acc["orphan_pairs"] += value
+                continue
+            acc["pairs"] += value
+            acc["zero_entries"] += value == 0
+        return acc
+
+    def drained_processes(self):
+        """{(start_ns, tgid): (proc, table)} for every counts entry of the stable
+        drain read, ready for the quiescent checkers with quiescence "drained":
+        proc = {"counts": {s: n}, "pairs_lost": n (None without bigrams),
+        "exited": bool (None without an info entry)}; table = decoded pairs
+        (raises bigrams.DecodeError on an I-B5 violation)."""
+        from .bigrams import decode_entries
+        if self._drain_state is None:
+            raise RuntimeError("no successful drain: the maps were not read stably (not drained)")
+        st, n = self._drain_state, len(SYSCALLS)
+        exited = {key: bool(v[5]) for key, v in st["info"]}
+        raw = {}
+        for (start, tgid, a, b), value in st.get("bigrams", ()):
+            raw.setdefault((start, tgid), []).append((a, b, value))
+        out = {}
+        for key, vals in st["counts"]:
+            table = decode_entries(raw.get(key, []))[0] if self.has_bigrams else {}
+            out[key] = ({"counts": dict(zip(SYSCALLS, vals[:n])),
+                         "pairs_lost": vals[n] if self.has_bigrams else None,
+                         "exited": exited.get(key)}, table)
+        return out
+
     # --- snapshot (schema v1, unchanged from M1) ---------------------------
     def snapshot(self, resource_seq=None):
+        """The v1 syscall_snapshot record. After a successful drain() this is the
+        drained snapshot: its maps must equal the drain's stable read, it sets
+        last_snapshot_drained, and no snapshot may follow it."""
         t0 = time.monotonic_ns()
+        drained = self._drain_state is not None
+        self.last_snapshot_drained = False
+        if drained:
+            if self._drained_snapshot_taken:
+                raise RuntimeError("the drained snapshot was taken: it is the epoch's last")
+            if self._read_state() != self._drain_state:
+                raise RuntimeError("the maps changed after the drain: no drained snapshot")
+            self._drained_snapshot_taken = True
         counts_t, info_t = self.b["counts"], self.b["info"]
         counts = {(k.start_ns, k.tgid): tuple(v.c[i] for i in range(len(SYSCALLS)))
                   for k, v in counts_t.items()}
@@ -502,6 +706,10 @@ class BpfCollector:
                     except KeyError:
                         pass
                 if self.has_bigrams:
+                    if cur is not None:      # the values removed, unchanged since the exit report
+                        self.reclaimed_totals["counts"] += sum(cur[0])
+                        self.reclaimed_totals["pairs_lost"] += cur[1]
+                        self.reclaimed_totals["pairs"] += cur[2]
                     pairs_t = self.b["bigrams"]
                     for _a, _b, _n, bk in raw_pairs.get(key, ()):
                         try:
@@ -555,4 +763,5 @@ class BpfCollector:
         }
         self.seq += 1
         self._prev_t = t0
+        self.last_snapshot_drained = drained
         return rec

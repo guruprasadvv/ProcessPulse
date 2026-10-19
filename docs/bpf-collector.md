@@ -174,8 +174,9 @@ example, a helper that ran entirely with a full slot map gave
 `start()` arms right after the tracepoints are verified (`arm=False`
 defers it, so `arm()` can be called later). `arm()` reads `CLOCK_BOOTTIME`
 (the clock of `start_boottime` and `bpf_ktime_get_boot_ns()`), writes
-`armed_boot_ns`, then sets `armed`. Disarming and the final drain are not
-implemented (drain is a later S2 step).
+`armed_boot_ns`, then sets `armed`. Disarming is not implemented: under U2a
+it would not stop the counts, so the final drain detaches the probes
+instead (U3; "Final drain" below).
 
 ### Reading, reclaim and purge
 
@@ -188,8 +189,10 @@ implemented (drain is a later S2 step).
   The reads are sequential, not atomic.
 - Exit reclaim (two-phase): an exited process is reclaimed only when its
   counts, `pairs_lost` and pair sum are unchanged since its exit report; its
-  pair entries are deleted with it. `snapshot()` keeps the decoded tables
-  of that read in `last_bigrams`.
+  pair entries are deleted with it, and the removed values are added to
+  `reclaimed_totals` (`counts`, `pairs`, `pairs_lost`; S2.5). A key whose
+  counts entry is already gone (purged) adds nothing there. `snapshot()`
+  keeps the decoded tables of that read in `last_bigrams`.
 - `exclude()` sets the exclusion first, then deletes the process's counts,
   info, slots and pair entries, adding them to `purged_counts`,
   `purged_pairs` and `purged_pairs_lost` (P-PURGE).
@@ -268,5 +271,89 @@ microseconds, and the old purge read milliseconds after setting the flag. They
 are exact regression checks; the barrier's guarantee rests on the RCU argument
 above and on `test_exclude_sets_the_flag_then_waits_then_purges`, which
 requires the barrier before any read or delete.
-- Map reads are not atomic; exact checks require an idle process. The drained
-  final snapshot (U3, H-DRAIN) is not implemented yet.
+- Map reads are not atomic; exact checks require an idle process or the
+  stable read of the final drain (below).
+
+### Final drain (S2.5, decision U3)
+
+`drain()` ends the epoch with a stable read of every map. Before
+S2.6 nothing calls it; the S2.6 emitter will turn the drained snapshot into
+the end record's `drained: true`.
+
+**Steps:**
+1. **Detach** every tracepoint (BCC `detach_tracepoint`, syscall probes
+   first, then the scheduler hooks); the maps and the loaded programs stay.
+   Any probe still attached afterwards fails the drain.
+2. **`rcu_barrier()`** (the same `membarrier(MEMBARRIER_CMD_GLOBAL)` as the
+   exclusion purge). A failure fails the drain before any read.
+3. **Read** every map a probe writes twice and require the two reads to be
+   equal (U3). The maps read are:
+   - `counts` (with `pairs_lost`);
+   - `info`, including `last_ktime`, which every counted event moves;
+   - `threads`, including `prev`;
+   - `bigrams` and `bglobal`;
+   - all twelve health counters;
+   - the userspace purge and reclaim totals.
+
+   `excluded` is left out: only userspace writes it.
+
+   Unequal reads mean something wrote after step 2, which the argument below
+   excludes. The status is then `unstable`, `changed` lists the maps that
+   differed, and nothing is claimed. No third read is accepted instead: a
+   retry runs all three steps again, with a new barrier. A failed read fails
+   the drain.
+
+**Why step 2 suffices (argued from source, tag `linux-msft-wsl-6.18.33.2`, as
+in the purge audit):**
+- Closing a probe's perf event (`perf_release` → `perf_event_release_kernel`
+  → `_free_event` → `perf_event_free_bpf_prog`) calls
+  `perf_event_detach_bpf_prog()` (`kernel/trace/bpf_trace.c:1950-1972`). It
+  removes the program from the tracepoint's prog array with
+  `rcu_assign_pointer`, or replaces it with a dummy program in place if the
+  copy fails.
+- The programs run only inside `trace_call_bpf()` under `rcu_read_lock()`
+  with preemption disabled (purge audit, section C).
+- So `synchronize_rcu()` after the close waits for every invocation that may
+  still run from the old array, and later invocations cannot see the
+  program.
+- **Assumption (not verified on this build):** the perf event's last
+  reference is the fd BCC closes, so the release runs before `close()`
+  returns. A pending `pending_task` work item (perf sigtrap) could defer it,
+  and BCC's tracepoint events do not use it. The double read is the
+  empirical check of the whole chain (H-DRAIN).
+
+**Result:**
+- `drain()` returns, and keeps as `drain_result`: `status` (`drained`,
+  `unstable` or `failed`), `drained`, `reason`, `detached`,
+  `still_attached`, `barrier`, `reads`, `changed`, `detached_mono_ns`,
+  `drain_ns` and `accounting`.
+- `accounting` is present only with bigrams and only when drained. It holds
+  the I-B2 terms of the stable read:
+  - live `keys`, `counts`, `pairs` and `pairs_lost`;
+  - `orphan_entries`/`orphan_pairs` (pair entries without a counts entry) and
+    `zero_entries`;
+  - copies of `reclaimed` (`reclaimed_totals`) and `purged`;
+  - `bigram_health`.
+- `bigrams.check_ib2_drain_read(drain_result)` evaluates I-B2 on it.
+- `drained_processes()` gives `{(start_ns, tgid): (proc, table)}` for the
+  quiescent checkers with quiescence `drained`.
+
+**State rules:**
+- The epoch is over once `drain()` starts: `exclude()` raises from then on,
+  even when the drain failed. A lock serialises the two, so an exclusion
+  either completes before the drain reads or is refused.
+- A drain that did not succeed may be retried.
+- After a successful drain, exactly one more `snapshot()` is allowed. This is
+  the drained snapshot: its read must equal the drain's stable read (else
+  `RuntimeError`), and it sets `last_snapshot_drained`. It reclaims keys
+  reported exited before, as usual. Any later `snapshot()` or `drain()`
+  raises.
+- If the drained snapshot raises after the cross-check, the epoch ends
+  without one (fail-closed).
+- `drain()` and `snapshot()` must be called from one thread (the agent's
+  loop).
+
+**Accounting:** reclaim and purge delete exactly the entries whose values
+they add to their totals, and the drain's `accounting` copies those totals
+at the stable read, so every key is in exactly one I-B2 term (tested: a
+reclaim after the drain does not count a key twice).

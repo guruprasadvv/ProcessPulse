@@ -1,0 +1,5 @@
+FAILED tests/test_drain_unit.py::test_the_drained_snapshot_is_cross_checked_and_is_the_last
+FAILED tests/test_drain_unit.py::test_a_map_change_after_the_drain_fails_the_drained_snapshot
+FAILED tests/test_drain_unit.py::test_snapshots_after_an_unsuccessful_drain_are_ordinary
+FAILED tests/test_drain_unit.py::test_counts_only_snapshot_path_is_unchanged_without_a_drain
+26 failed in 3.50s

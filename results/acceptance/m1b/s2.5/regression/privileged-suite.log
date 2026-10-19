@@ -1,0 +1,87 @@
+start_wall: 2026-10-19T11:50:21+00:00 uid=0 kernel=6.18.33.2-microsoft-standard-WSL2
+python: Python 3.14.4
+bpf_stats_enabled: 0
+mem_available_kb: 6265992
+cmd: python3 -m pytest tests/ -m privileged -q -W ignore::DeprecationWarning --durations=15
+........................................................................ [ 82%]
+...............                                                          [100%]
+=============================== warnings summary ===============================
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1000]
+  tests/test_bigrams_acceptance.py:109: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("n", [1, 1000])
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[openat]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[execve]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone]
+  tests/test_bigrams_acceptance.py:115: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.slow
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_mixed_sequence
+  tests/test_bigrams_acceptance.py:121: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_exact_pairs_mixed_sequence(col, spawn_helper, record_property):
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_across_an_exec
+  tests/test_bigrams_acceptance.py:127: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_exact_pairs_across_an_exec(col, helper_bin, exec_target, record_property):
+
+tests/test_bigrams_acceptance.py::test_ground_truth_over_a_scope_with_exit_and_purge
+  tests/test_bigrams_acceptance.py:145: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_ground_truth_over_a_scope_with_exit_and_purge(col, spawn_helper, record_property):
+
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[0]
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[1]
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[2]
+  tests/test_drain_bpf.py:128: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("rep", range(3))
+
+tests/test_drain_bpf.py::test_drained_values_equal_the_ground_truth_of_live_exited_reclaimed_and_purged
+  tests/test_drain_bpf.py:174: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_drained_values_equal_the_ground_truth_of_live_exited_reclaimed_and_purged(
+
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1]
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1000]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1000]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1000]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1000]
+  tests/test_syscall_collector.py:61: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("n", [1, 1000])
+
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[openat]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[execve]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[clone]
+  tests/test_syscall_collector.py:78: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.slow
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 15 durations =============================
+53.19s call     tests/test_syscall_collector.py::test_exact_entry_counts_100000[clone]
+52.99s call     tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone]
+32.53s call     tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[2]
+32.27s call     tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[1]
+32.14s call     tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[0]
+27.22s setup    tests/test_dit1.py::test_check1_container_visible_pid
+25.97s call     tests/test_drain_bpf.py::test_the_double_read_sees_activity_on_attached_probes
+18.22s call     tests/test_exclusion_purge.py::test_counts_only_build_purges_a_busy_process_exactly
+18.10s call     tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs
+15.97s call     tests/test_agent.py::test_full_run_aligns_streams_and_excludes_itself
+13.86s call     tests/test_bpf_collector.py::test_exactly_two_compilations_and_the_planned_tracepoints
+13.31s call     tests/test_drain_bpf.py::test_drained_values_equal_the_ground_truth_of_live_exited_reclaimed_and_purged
+13.30s call     tests/test_bigrams_bpf.py::test_two_compilations_same_tracepoints_and_one_extra_map
+13.16s call     tests/test_drain_bpf.py::test_counts_only_drain
+13.01s call     tests/test_drain_bpf.py::test_drain_detaches_every_probe_and_freezes_the_maps
+87 passed, 552 deselected, 29 warnings in 589.95s (0:09:49)
+rc=0
+end_wall: 2026-10-19T12:00:12+00:00
+bpf_stats_enabled: 0
+ppc_cgroups: 0
+containers: 0

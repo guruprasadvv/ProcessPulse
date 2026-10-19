@@ -1,0 +1,1370 @@
+diff --git a/processpulse/bpf_collector.py b/processpulse/bpf_collector.py
+index 62abb2e..7c0e465 100644
+--- a/processpulse/bpf_collector.py
++++ b/processpulse/bpf_collector.py
+@@ -19,8 +19,16 @@ read_bigrams() reads the bigram map, groups the raw entries by process and
+ decodes them (processpulse.bigrams); zero-count entries are dropped and
+ reported (P-ZERO). bigram_health() returns the end-record health fields.
+ Exit reclaim requires the counts, pairs_lost and pair sum to be unchanged
+-since the exit report and deletes the key's bigram entries with it;
+-exclude() purges them and adds them to the purge totals.
++since the exit report and deletes the key's bigram entries with it, adding
++the removed values to reclaimed_totals; exclude() purges them and adds them
++to the purge totals.
++
++drain() is the final drain (S2.5, decision U3): it detaches every probe but
++keeps the maps, waits for in-flight probe invocations (rcu_barrier()), then
++reads every map twice and requires the reads to be equal (H-DRAIN). It ends the
++epoch: exclude() is refused afterwards, and after a successful drain exactly
++one more snapshot() is allowed, the drained snapshot (last_snapshot_drained),
++which must read the same maps as the drain.
+ 
+ snapshot() returns the M1 schema-v1 syscall_snapshot record (unchanged);
+ exited processes are reported once and reclaimed at the next snapshot if
+@@ -186,6 +194,11 @@ def calibrate(compilations=None):
+         b.cleanup()
+ 
+ 
++def _tp_name(tp):
++    """'category:event' of a BCC tracepoint_fds key (BCC may use bytes)."""
++    return tp.decode() if isinstance(tp, bytes) else tp
++
++
+ def family_totals(counts):
+     return {fam: sum(counts[s] for s in members) for fam, members in VOCABULARY.family_map().items()}
+ 
+@@ -202,7 +215,14 @@ class BpfCollector:
+         self._arm_at_start = arm
+         self.armed_boot_ns = None
+         self.purged = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: self-exclusion purges
++        self.reclaimed_totals = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: exit reclaims
+         self.last_bigrams = None   # bigrams: read_bigrams() result of the last snapshot()
++        self.drain_result = None   # the last drain() result
++        self.last_snapshot_drained = False   # the last snapshot() was the drained snapshot
++        self._draining = False     # drain() was called: the epoch is over
++        self._drain_state = None   # the stable read of a successful drain
++        self._drained_snapshot_taken = False
++        self._drain_lock = threading.Lock()   # serialises drain() and exclude()
+         self.distro_inum_override = distro_inum_override   # tests: force unresolved
+         self.resolver = resolver or CgroupResolver()
+         self.track_removals = track_removals
+@@ -270,7 +290,7 @@ class BpfCollector:
+         """'category:event' names BCC attached (its tracepoint_fds keys may be bytes)."""
+         if self.b is None:
+             return []
+-        return [k.decode() if isinstance(k, bytes) else k for k in self.b.tracepoint_fds]
++        return [_tp_name(k) for k in self.b.tracepoint_fds]
+ 
+     def build_info(self):
+         info = {"capabilities": list(self.capabilities), "compilations": list(self.compilations),
+@@ -307,6 +327,15 @@ class BpfCollector:
+ 
+     # --- exclusion and removal bookkeeping ---------------------------------
+     def exclude(self, tgid):
++        """See _exclude(). Refused once drain() was called: the probes are (being)
++        detached and the maps hold the epoch's final values, which a purge would
++        change."""
++        with self._drain_lock:
++            if self._draining:
++                raise RuntimeError("exclude() after drain(): the epoch's maps are final")
++            self._exclude(tgid)
++
++    def _exclude(self, tgid):
+         """Stops counting tgid (our own collectors) and purges entries it made
+         before the exclusion took effect (e.g. the pre-exec execve of a freshly
+         spawned collector), including its thread slots. Purged events stay
+@@ -424,12 +453,23 @@ class BpfCollector:
+         """The bpf_snapshot_end.bigram_health fields (cumulative)."""
+         if not self.has_bigrams:
+             raise RuntimeError("bigram_health() needs the bigrams capability")
+-        h = self._health_all()
++        return self._bigram_health_from(self._health_all(), self.purged)
++
++    @staticmethod
++    def _bigram_health_from(h, purged):
+         out = {k: h[k] for k in BIGRAM_HEALTH[:5]}
+-        out.update({"purged_counts": self.purged["counts"], "purged_pairs": self.purged["pairs"],
+-                    "purged_pairs_lost": self.purged["pairs_lost"]})
++        out.update({"purged_counts": purged["counts"], "purged_pairs": purged["pairs"],
++                    "purged_pairs_lost": purged["pairs_lost"]})
+         return {k: out[k] for k in BIGRAM_HEALTH}
+ 
++    def _pair_items(self):
++        """(items, method) of the bigram map: one batch read, else per key (H-BATCH)."""
++        table = self.b["bigrams"]
++        try:
++            return list(table.items_lookup_batch()), "batch"
++        except Exception:                         # H-BATCH: fall back to one lookup per key
++            return list(table.items()), "items"
++
+     def _read_bigrams_raw(self):
+         """(result, raw): the decoded per-process tables and, per process, the raw
+         map keys (for deletion). Map reads are sequential, not atomic: values of a
+@@ -438,11 +478,7 @@ class BpfCollector:
+         if not self.has_bigrams:
+             raise RuntimeError("read_bigrams() needs the bigrams capability")
+         t0 = time.monotonic_ns()
+-        table = self.b["bigrams"]
+-        try:
+-            items, method = list(table.items_lookup_batch()), "batch"
+-        except Exception:                         # H-BATCH: fall back to one lookup per key
+-            items, method = list(table.items()), "items"
++        items, method = self._pair_items()
+         lost = {(k.start_ns, k.tgid): v.pairs_lost for k, v in self.b["counts"].items()}
+         raw = {}
+         for k, v in items:
+@@ -468,9 +504,177 @@ class BpfCollector:
+         are dropped (P-ZERO) and counted; they are not loss."""
+         return self._read_bigrams_raw()[0]
+ 
++    # --- final drain (S2.5, U3) ----------------------------------------------
++    def drain(self):
++        """Ends the epoch with a stable final read of every map (U3, H-DRAIN):
++
++        1. detach every tracepoint; the maps stay. Closing a probe's perf event
++           removes the program from the tracepoint's prog array
++           (perf_event_detach_bpf_prog, an RCU pointer swap); a probe that
++           cannot be detached fails the drain;
++        2. rcu_barrier(): invocations that still run from the old prog array
++           (under rcu_read_lock(), see rcu_barrier) have finished when it
++           returns, and none can start. A failure fails the drain;
++        3. read every map (and the userspace purge and reclaim totals) twice.
++           Equal reads are the drained state. Unequal reads mean something
++           wrote after step 2, against the argument above: the status is
++           "unstable", nothing is claimed, and no later read is accepted
++           without a new barrier (a retry runs steps 1-3 again).
++
++        Returns (and keeps as drain_result) {"status": "drained" | "unstable" |
++        "failed", "drained", "reason", "detached", "still_attached", "barrier",
++        "reads", "changed" (the maps whose two reads differed),
++        "detached_mono_ns", "drain_ns", "accounting"}. "accounting" (bigrams
++        only, and only when drained) holds the I-B2 terms of the stable read:
++        live keys' counts, pairs and pairs_lost, the pair entries without a
++        counts entry (orphans) and those with n = 0, plus copies of
++        reclaimed_totals, the purge totals and bigram_health; see
++        bigrams.check_ib2_drain_read. drained_processes() gives the per-key
++        values for the quiescent checkers.
++
++        The epoch is over once drain() starts: exclude() is refused. A drain
++        that did not succeed may be retried; after the drained snapshot was
++        taken it may not."""
++        if self.b is None:
++            raise RuntimeError("drain() needs a started collector")
++        with self._drain_lock:
++            if self._drained_snapshot_taken:
++                raise RuntimeError("the drained snapshot was taken: it is the epoch's last")
++            self._draining = True
++            self._drain_state = None
++            t0 = time.monotonic_ns()
++            res = {"status": "failed", "drained": False, "reason": None, "detached": [],
++                   "still_attached": [], "barrier": False, "reads": 0, "changed": [],
++                   "detached_mono_ns": None, "drain_ns": None, "accounting": None}
++            self.drain_result = res
++            res["reason"] = self._drain_steps(res)
++            if res["reason"] is None:
++                res["status"], res["drained"] = "drained", True
++            elif res["status"] != "unstable":
++                res["status"] = "failed"
++            res["drain_ns"] = time.monotonic_ns() - t0
++            return res
++
++    def _drain_steps(self, res):
++        """Steps 1-3 of drain(); returns None on success or the reason it did not
++        succeed (res["status"] is set to "unstable" for unequal reads)."""
++        order = {tp: i for i, tp in enumerate(required_tracepoints(self.capabilities))}
++        errors = []
++        for tp in sorted(self.b.tracepoint_fds, key=lambda t: order.get(_tp_name(t), len(order))):
++            try:
++                self.b.detach_tracepoint(tp)
++                res["detached"].append(_tp_name(tp))
++            except Exception as e:                  # BCC raises a bare Exception
++                errors.append(f"{_tp_name(tp)}: {e}")
++        res["still_attached"] = sorted(self.attached_tracepoints())
++        res["detached_mono_ns"] = time.monotonic_ns()
++        if errors or res["still_attached"]:
++            return f"probes still attached: {res['still_attached']} ({'; '.join(errors)})"[:300]
++        try:
++            rcu_barrier()
++        except Exception as e:
++            return f"{type(e).__name__}: {e}"[:300]
++        res["barrier"] = True
++        try:
++            first = self._read_state()
++            res["reads"] = 1
++            second = self._read_state()
++            res["reads"] = 2
++        except Exception as e:                      # a map read failed
++            return f"map read failed: {type(e).__name__}: {e}"[:300]
++        if first != second:
++            res["status"] = "unstable"
++            res["changed"] = sorted(m for m in second if second[m] != first[m])
++            return f"the two reads after the barrier differ in {res['changed']}"
++        self._drain_state = first
++        if self.has_bigrams:
++            res["accounting"] = self._drain_accounting(first)
++        return None
++
++    def _read_state(self):
++        """The complete content of every map a probe writes, and the userspace
++        totals, in a form that compares equal iff nothing changed (drain()).
++        Includes last_ktime (every counted event moves it), thread slots (prev),
++        bglobal and every health counter. `excluded` is written only by
++        userspace (exclude/unexclude) and is left out."""
++        n = len(SYSCALLS)
++        counts = sorted(((k.start_ns, k.tgid), tuple(v.c[i] for i in range(n))
++                         + ((v.pairs_lost,) if self.has_bigrams else ()))
++                        for k, v in self.b["counts"].items())
++        info = sorted(((k.start_ns, k.tgid), (v.cgroup_id, v.last_ktime, v.host_tgid, v.level,
++                                              v.container_pid, v.exited, bytes(v.comm)))
++                      for k, v in self.b["info"].items())
++        threads = sorted((tid.value, (s.thread_start_ns, s.proc.start_ns, s.proc.tgid, s.tid, s.prev))
++                         for tid, s in self.b["threads"].items())
++        state = {"counts": counts, "info": info, "threads": threads, "health": self._health_all(),
++                 "userspace": {"reclaimed": self.reclaimed, "purged_self": self._purged_self}}
++        if self.has_bigrams:
++            items, _method = self._pair_items()
++            state["bigrams"] = sorted(((k.proc.start_ns, k.proc.tgid, k.a, k.b), v.value)
++                                      for k, v in items)
++            g = self.b["bglobal"][ctypes.c_int(0)]
++            state["bglobal"] = (g.armed_boot_ns, g.last_thread_full_ns, g.armed)
++            state["userspace"].update(purged=dict(self.purged),
++                                      reclaimed_totals=dict(self.reclaimed_totals))
++        return state
++
++    def _drain_accounting(self, state):
++        """The I-B2 terms of a stable read (bigrams). Live terms come from the maps;
++        reclaimed and purged terms are copies, so a later reclaim cannot alias them."""
++        n = len(SYSCALLS)
++        live = dict(state["counts"])
++        acc = {"keys": len(live), "counts": sum(sum(v[:n]) for v in live.values()),
++               "pairs": 0, "pairs_lost": sum(v[n] for v in live.values()),
++               "orphan_entries": 0, "orphan_pairs": 0, "zero_entries": 0,
++               "reclaimed": dict(state["userspace"]["reclaimed_totals"]),
++               "purged": dict(state["userspace"]["purged"]),
++               "bigram_health": self._bigram_health_from(state["health"],
++                                                         state["userspace"]["purged"])}
++        for (start, tgid, _a, _b), value in state["bigrams"]:
++            if (start, tgid) not in live:
++                acc["orphan_entries"] += 1
++                acc["orphan_pairs"] += value
++                continue
++            acc["pairs"] += value
++            acc["zero_entries"] += value == 0
++        return acc
++
++    def drained_processes(self):
++        """{(start_ns, tgid): (proc, table)} for every counts entry of the stable
++        drain read, ready for the quiescent checkers with quiescence "drained":
++        proc = {"counts": {s: n}, "pairs_lost": n (None without bigrams),
++        "exited": bool (None without an info entry)}; table = decoded pairs
++        (raises bigrams.DecodeError on an I-B5 violation)."""
++        from .bigrams import decode_entries
++        if self._drain_state is None:
++            raise RuntimeError("no successful drain: the maps were not read stably (not drained)")
++        st, n = self._drain_state, len(SYSCALLS)
++        exited = {key: bool(v[5]) for key, v in st["info"]}
++        raw = {}
++        for (start, tgid, a, b), value in st.get("bigrams", ()):
++            raw.setdefault((start, tgid), []).append((a, b, value))
++        out = {}
++        for key, vals in st["counts"]:
++            table = decode_entries(raw.get(key, []))[0] if self.has_bigrams else {}
++            out[key] = ({"counts": dict(zip(SYSCALLS, vals[:n])),
++                         "pairs_lost": vals[n] if self.has_bigrams else None,
++                         "exited": exited.get(key)}, table)
++        return out
++
+     # --- snapshot (schema v1, unchanged from M1) ---------------------------
+     def snapshot(self, resource_seq=None):
++        """The v1 syscall_snapshot record. After a successful drain() this is the
++        drained snapshot: its maps must equal the drain's stable read, it sets
++        last_snapshot_drained, and no snapshot may follow it."""
+         t0 = time.monotonic_ns()
++        drained = self._drain_state is not None
++        self.last_snapshot_drained = False
++        if drained:
++            if self._drained_snapshot_taken:
++                raise RuntimeError("the drained snapshot was taken: it is the epoch's last")
++            if self._read_state() != self._drain_state:
++                raise RuntimeError("the maps changed after the drain: no drained snapshot")
++            self._drained_snapshot_taken = True
+         counts_t, info_t = self.b["counts"], self.b["info"]
+         counts = {(k.start_ns, k.tgid): tuple(v.c[i] for i in range(len(SYSCALLS)))
+                   for k, v in counts_t.items()}
+@@ -502,6 +706,10 @@ class BpfCollector:
+                     except KeyError:
+                         pass
+                 if self.has_bigrams:
++                    if cur is not None:      # the values removed, unchanged since the exit report
++                        self.reclaimed_totals["counts"] += sum(cur[0])
++                        self.reclaimed_totals["pairs_lost"] += cur[1]
++                        self.reclaimed_totals["pairs"] += cur[2]
+                     pairs_t = self.b["bigrams"]
+                     for _a, _b, _n, bk in raw_pairs.get(key, ()):
+                         try:
+@@ -555,4 +763,5 @@ class BpfCollector:
+         }
+         self.seq += 1
+         self._prev_t = t0
++        self.last_snapshot_drained = drained
+         return rec
+diff --git a/processpulse/bigrams.py b/processpulse/bigrams.py
+index f6247f9..507227f 100644
+--- a/processpulse/bigrams.py
++++ b/processpulse/bigrams.py
+@@ -299,6 +299,43 @@ def check_ib2_drained(rc):
+                   "" if lhs == rhs else "global conservation broken", detail)
+ 
+ 
++def check_ib2_drain_read(drain):
++    """I-B2 on the collector's own drained read (BpfCollector.drain(), S2.5):
++
++        live C' + reclaimed C' + purged_counts
++            = live B + live pairs_lost + reclaimed B + reclaimed pairs_lost
++              + purged_pairs + purged_pairs_lost
++
++    The equation of check_ib2_drained, with the live terms taken from the
++    stable read of the maps (every key with a counts entry) instead of an
++    emitted stream, and the reclaimed terms from the collector's reclaim
++    totals (the values of each key reclaimed as exited, unchanged since its
++    exit report). Each key is in exactly one term: reclaim and purge delete
++    the entries they account for. Preconditions: drained (detached, barrier,
++    two equal reads) and the bigram capability selected. A pair entry
++    without a counts entry belongs to no term, so it is a FAIL.
++    """
++    name = "I-B2-drain"
++    if not drain or not drain.get("drained"):
++        return Result(name, NOT_APPLICABLE, None, "no drained read (drain not run or not stable)")
++    acc = drain.get("accounting")
++    if acc is None:
++        return Result(name, NOT_APPLICABLE, None, "bigram capability not selected")
++    if acc["orphan_entries"]:
++        return Result(name, FAIL, None,
++                      f"{acc['orphan_entries']} pair entries without a counts entry "
++                      f"({acc['orphan_pairs']} pairs) belong to no I-B2 term")
++    rec, pur = acc["reclaimed"], acc["purged"]
++    lhs = acc["counts"] + rec["counts"] + pur["counts"]
++    rhs = (acc["pairs"] + acc["pairs_lost"] + rec["pairs"] + rec["pairs_lost"]
++           + pur["pairs"] + pur["pairs_lost"])
++    detail = {"lhs": lhs, "rhs": rhs, "keys_live": acc["keys"], "live_counts": acc["counts"],
++              "live_pairs": acc["pairs"], "live_pairs_lost": acc["pairs_lost"],
++              "reclaimed": dict(rec), "purged": dict(pur)}
++    return Result(name, PASS if lhs == rhs else FAIL, None,
++                  "" if lhs == rhs else "global conservation broken", detail)
++
++
+ def check_ib2_ground_truth(rc, observed_entries):
+     """I-B2 against independent ground truth (the v2 §4 form of I-B2):
+ 
+diff --git a/docs/bpf-collector.md b/docs/bpf-collector.md
+index 1dbf0cd..58bb96e 100644
+--- a/docs/bpf-collector.md
++++ b/docs/bpf-collector.md
+@@ -174,8 +174,9 @@ example, a helper that ran entirely with a full slot map gave
+ `start()` arms right after the tracepoints are verified (`arm=False`
+ defers it, so `arm()` can be called later). `arm()` reads `CLOCK_BOOTTIME`
+ (the clock of `start_boottime` and `bpf_ktime_get_boot_ns()`), writes
+-`armed_boot_ns`, then sets `armed`. Disarming and the final drain are not
+-implemented (drain is a later S2 step).
++`armed_boot_ns`, then sets `armed`. Disarming is not implemented: under U2a
++it would not stop the counts, so the final drain detaches the probes
++instead (U3; "Final drain" below).
+ 
+ ### Reading, reclaim and purge
+ 
+@@ -188,8 +189,10 @@ implemented (drain is a later S2 step).
+   The reads are sequential, not atomic.
+ - Exit reclaim (two-phase): an exited process is reclaimed only when its
+   counts, `pairs_lost` and pair sum are unchanged since its exit report; its
+-  pair entries are deleted with it. `snapshot()` keeps the decoded tables
+-  of that read in `last_bigrams`.
++  pair entries are deleted with it, and the removed values are added to
++  `reclaimed_totals` (`counts`, `pairs`, `pairs_lost`; S2.5). A key whose
++  counts entry is already gone (purged) adds nothing there. `snapshot()`
++  keeps the decoded tables of that read in `last_bigrams`.
+ - `exclude()` sets the exclusion first, then deletes the process's counts,
+   info, slots and pair entries, adding them to `purged_counts`,
+   `purged_pairs` and `purged_pairs_lost` (P-PURGE).
+@@ -268,5 +271,89 @@ microseconds, and the old purge read milliseconds after setting the flag. They
+ are exact regression checks; the barrier's guarantee rests on the RCU argument
+ above and on `test_exclude_sets_the_flag_then_waits_then_purges`, which
+ requires the barrier before any read or delete.
+-- Map reads are not atomic; exact checks require an idle process. The drained
+-  final snapshot (U3, H-DRAIN) is not implemented yet.
++- Map reads are not atomic; exact checks require an idle process or the
++  stable read of the final drain (below).
++
++### Final drain (S2.5, decision U3)
++
++`drain()` ends the epoch with a stable read of every map. Before
++S2.6 nothing calls it; the S2.6 emitter will turn the drained snapshot into
++the end record's `drained: true`.
++
++**Steps:**
++1. **Detach** every tracepoint (BCC `detach_tracepoint`, syscall probes
++   first, then the scheduler hooks); the maps and the loaded programs stay.
++   Any probe still attached afterwards fails the drain.
++2. **`rcu_barrier()`** (the same `membarrier(MEMBARRIER_CMD_GLOBAL)` as the
++   exclusion purge). A failure fails the drain before any read.
++3. **Read** every map a probe writes twice and require the two reads to be
++   equal (U3). The maps read are:
++   - `counts` (with `pairs_lost`);
++   - `info`, including `last_ktime`, which every counted event moves;
++   - `threads`, including `prev`;
++   - `bigrams` and `bglobal`;
++   - all twelve health counters;
++   - the userspace purge and reclaim totals.
++
++   `excluded` is left out: only userspace writes it.
++
++   Unequal reads mean something wrote after step 2, which the argument below
++   excludes. The status is then `unstable`, `changed` lists the maps that
++   differed, and nothing is claimed. No third read is accepted instead: a
++   retry runs all three steps again, with a new barrier. A failed read fails
++   the drain.
++
++**Why step 2 suffices (argued from source, tag `linux-msft-wsl-6.18.33.2`, as
++in the purge audit):**
++- Closing a probe's perf event (`perf_release` → `perf_event_release_kernel`
++  → `_free_event` → `perf_event_free_bpf_prog`) calls
++  `perf_event_detach_bpf_prog()` (`kernel/trace/bpf_trace.c:1950-1972`). It
++  removes the program from the tracepoint's prog array with
++  `rcu_assign_pointer`, or replaces it with a dummy program in place if the
++  copy fails.
++- The programs run only inside `trace_call_bpf()` under `rcu_read_lock()`
++  with preemption disabled (purge audit, section C).
++- So `synchronize_rcu()` after the close waits for every invocation that may
++  still run from the old array, and later invocations cannot see the
++  program.
++- **Assumption (not verified on this build):** the perf event's last
++  reference is the fd BCC closes, so the release runs before `close()`
++  returns. A pending `pending_task` work item (perf sigtrap) could defer it,
++  and BCC's tracepoint events do not use it. The double read is the
++  empirical check of the whole chain (H-DRAIN).
++
++**Result:**
++- `drain()` returns, and keeps as `drain_result`: `status` (`drained`,
++  `unstable` or `failed`), `drained`, `reason`, `detached`,
++  `still_attached`, `barrier`, `reads`, `changed`, `detached_mono_ns`,
++  `drain_ns` and `accounting`.
++- `accounting` is present only with bigrams and only when drained. It holds
++  the I-B2 terms of the stable read:
++  - live `keys`, `counts`, `pairs` and `pairs_lost`;
++  - `orphan_entries`/`orphan_pairs` (pair entries without a counts entry) and
++    `zero_entries`;
++  - copies of `reclaimed` (`reclaimed_totals`) and `purged`;
++  - `bigram_health`.
++- `bigrams.check_ib2_drain_read(drain_result)` evaluates I-B2 on it.
++- `drained_processes()` gives `{(start_ns, tgid): (proc, table)}` for the
++  quiescent checkers with quiescence `drained`.
++
++**State rules:**
++- The epoch is over once `drain()` starts: `exclude()` raises from then on,
++  even when the drain failed. A lock serialises the two, so an exclusion
++  either completes before the drain reads or is refused.
++- A drain that did not succeed may be retried.
++- After a successful drain, exactly one more `snapshot()` is allowed. This is
++  the drained snapshot: its read must equal the drain's stable read (else
++  `RuntimeError`), and it sets `last_snapshot_drained`. It reclaims keys
++  reported exited before, as usual. Any later `snapshot()` or `drain()`
++  raises.
++- If the drained snapshot raises after the cross-check, the epoch ends
++  without one (fail-closed).
++- `drain()` and `snapshot()` must be called from one thread (the agent's
++  loop).
++
++**Accounting:** reclaim and purge delete exactly the entries whose values
++they add to their totals, and the drain's `accounting` copies those totals
++at the stable read, so every key is in exactly one I-B2 term (tested: a
++reclaim after the drain does not count a key twice).
+diff --git a/docs/telemetry-v2.md b/docs/telemetry-v2.md
+index 845111f..529252d 100644
+--- a/docs/telemetry-v2.md
++++ b/docs/telemetry-v2.md
+@@ -274,6 +274,13 @@ counts, `pairs_lost` and the pair sum (S2.3).
+ 5. **Drain:** `SnapshotView.drained` reports the drained snapshot. Any later
+    snapshot of the same epoch is counted in `snapshots_after_drain`,
+    invalidates, and is not applied; a new epoch starts normally.
++   Producer side (S2.5): `BpfCollector.drain()` detaches the probes,
++   waits for in-flight invocations, then reads the maps twice and requires
++   the reads to be equal;
++   the one `snapshot()` allowed after it is the drained snapshot
++   (`last_snapshot_drained`; `docs/bpf-collector.md`, "Final drain"). Writing
++   `drained: true` into the end record is the S2.6 emitter's job; until then
++   no run writes it.
+ 6. **Loss:** `SnapshotView.pair_loss_possible` is true when `bigram_dropped`
+    rose since the previous successful snapshot, `null` when it cannot be
+    judged (no bigram health, or no previous value). `loss_possible` keeps its
+@@ -368,6 +375,7 @@ exited) or `asserted` (a scripted helper idle outside the vocabulary). `None`
+ | `check_ib2_drained` | §8.5 A | drained snapshot applied, state valid, `epoch_intact`, capability ok, no vanished entry |
+ | `check_ib2_ground_truth` | ΣC′ + `purged_counts` + `counts_map_full` = N = ΣB + Σ`pairs_lost` + `purged_pairs` + `purged_pairs_lost` + `counts_map_full`, with N the observed entries counted by the script itself (v2 §4 form of I-B2) | as `check_ib2_drained`, plus a known N (only scripted helpers tracked) |
+ | `check_ib2_ground_truth_scope` (S2.4) | the same equation over a closed scope of scripted processes: their entries (live or exited) plus the purge totals they caused = N | scope quiescent; `counts_map_full` did not rise (row 1 cannot be attributed to a scope); usable before the drained snapshot exists |
++| `check_ib2_drain_read` (S2.5) | the `check_ib2_drained` equation on the collector's own drained read: live C′ + reclaimed C′ + `purged_counts` = live B + live `pairs_lost` + reclaimed B + reclaimed `pairs_lost` + `purged_pairs` + `purged_pairs_lost`; live terms from the stable map read, reclaimed terms from `BpfCollector.reclaimed_totals` (values of keys reclaimed as exited) | `BpfCollector.drain()` status `drained` (all probes detached, barrier, two equal reads); bigrams selected; a pair entry without a counts entry is a FAIL |
+ 
+ **Global-loss precondition of the exact checks (S2.4; S2.3 audit, finding 1).**
+ "Zero losses" (plan v3 D13) cannot be read from the process's own
+diff --git a/CLAUDE.md b/CLAUDE.md
+index bbce22a..c896efd 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -38,7 +38,8 @@ Never describe a [PLANNED] item as working.
+ | M1b S2.3 BPF bigram capability | [IMPLEMENTED 2026-10-19, uncommitted, under review] `bpf/bigrams.bpf.c` + `BpfCollector(capabilities=("counts", "bigrams"))`: markers, per-thread `prev`, R-LOSS rows 1–3 and pre-arm accounting, exec/exit/TID-reuse, reclaim and purge of pair entries, `read_bigrams()`, `bigram_health()`. Privileged 58 passed (16 new); counts-only equivalence 34/34 vs S1. No records emitted yet; drain not implemented. Design: `docs/bpf-collector.md`. |
+ | M1b S2.4 exact preconditions + repeated scripted acceptance | [IMPLEMENTED 2026-10-19, uncommitted, under review] Exact I-B3/I-B4 need zero global losses over the window; scoped I-B2 ground truth. `tools/acceptance/bigram_exact.sh`: 14 configurations (N ∈ {1, 1000, 100000}, exec, mixed, scope) passed 10/10 against the script's oracle; counts-only equivalence 34/34 in 10/10. Privileged 75 passed. Evidence: `results/acceptance/m1b/s2.4/`. Whole-epoch I-B2 waits for the drain (S2.5) and the emitter (S2.6). |
+ | Exclusion-purge race (S2.3 audit, finding 2) | [IMPLEMENTED 2026-10-19, uncommitted, under review] The exit hook checks the exclusion; `exclude()` sets the exclusion, waits for an RCU grace period (`membarrier(MEMBARRIER_CMD_GLOBAL)`), then purges. Purge tests 5/5 twice, privileged 80 passed, counts-only equivalence 34/34. [LIMITATION] The guarantee rests on kernel RCU semantics argued from source; the race was not reproducible in tests. Evidence: `results/acceptance/m1b/purge-race/`. |
+-| M1b S2.5+ (drain, emitter/agent), S3–S7, M2 … M7 | [PLANNED] — see §11. |
++| M1b S2.5 final drain (U3) | [IMPLEMENTED 2026-10-19, uncommitted, under review] `BpfCollector.drain()`: detach every probe (maps kept), `rcu_barrier()`, two map reads that must be equal (`drained` / `unstable` / `failed`); `reclaimed_totals`; `bigrams.check_ib2_drain_read`; `exclude()` refused after a drain; one drained `snapshot()` (`last_snapshot_drained`), cross-checked. Unprivileged 551 passed / 1 skip (py3.14 and py3.12), privileged 87 passed + drain file 2×7; 9/9 busy drains stable with I-B1′/I-B3′/I-B1/I-B2 PASS; ground truth 3/3; counts-only equivalence 34/34. [LIMITATION] The detach→barrier argument is from kernel source; no late writer was observed, so the barrier's necessity is not demonstrated. `drained: true` is not emitted yet (S2.6). Evidence: `results/acceptance/m1b/s2.5/`. |
++| M1b S2.6+ (emitter/agent), S3–S7, M2 … M7 | [PLANNED] — see §11. |
+ 
+ ## 2. Approved decisions (authoritative — do not reopen)
+ 
+diff --git a/ENGINEERING_CHANGELOG.md b/ENGINEERING_CHANGELOG.md
+index bff0e53..6cf7b94 100644
+--- a/ENGINEERING_CHANGELOG.md
++++ b/ENGINEERING_CHANGELOG.md
+@@ -581,3 +581,96 @@ Step 2 of the S2 sequence. No BPF, emitter, agent or kernel change.
+ - Counts-only equivalence: 34 of 34 fields identical to S1.
+ - `make test` (py3.14): 74 C checks, 0 failures; 525 passed, 1 skipped.
+   py3.12 `make test-py`: 525 passed, 1 skipped. `make check` rc 0.
++
++## 2026-10-19 — M1b S2.5: final drain (detach, barrier, double read) (uncommitted)
++
++Contract: decision U3 (approved with A8/U1–U10): detach every probe, keep the
++maps, read twice and require equal reads before any I-B2 claim (hypothesis
++H-DRAIN); design §3.6 (`drain()` in the collector), §4 test matrix row
++"I-B2 drained". No schema, emitter, agent or BPF-source change: writing
++`drained: true` into the end record is S2.6.
++
++### Changes
++- `processpulse/bpf_collector.py`:
++  - `drain()`:
++    1. detaches every tracepoint (BCC `detach_tracepoint`, syscall probes
++       first) and fails if any stays attached;
++    2. calls `rcu_barrier()` (the purge's `membarrier(MEMBARRIER_CMD_GLOBAL)`)
++       and fails if it fails;
++    3. reads every map a probe writes (`counts` with `pairs_lost`, `info`
++       with `last_ktime`, `threads` with `prev`, `bigrams`, `bglobal`, all
++       health counters) plus the userspace purge and reclaim totals, twice.
++
++    Equal reads mean `drained`; unequal reads mean `unstable` (no claim,
++    `changed` lists the maps); any failure is `failed`. A retry re-runs all
++    three steps, including the barrier.
++  - `accounting` (bigrams only, only when drained) holds the I-B2 terms of
++    the stable read, with copies of the reclaim and purge totals;
++    `drained_processes()` gives per-key values for the quiescent checkers.
++  - `reclaimed_totals` (counts, pairs, `pairs_lost` of keys removed by the
++    two-phase exit reclaim; a key whose counts entry is already gone adds
++    nothing).
++  - Epoch end:
++    - `exclude()` is refused once `drain()` starts (a lock serialises them);
++      the purge body is unchanged (now `_exclude()`, flag → barrier → purge);
++    - after a successful drain exactly one `snapshot()` is allowed (the
++      drained snapshot): its read must equal the drain's, and it sets
++      `last_snapshot_drained`;
++    - a later `snapshot()`/`drain()` raises.
++- `processpulse/bigrams.py`: `check_ib2_drain_read()`. It is the approved
++  I-B2 equation (S2.2 §8.5 A) on the drained read, with live terms from the
++  maps and reclaimed terms from `reclaimed_totals`. A pair entry without a
++  counts entry is a FAIL.
++- Docs: `docs/bpf-collector.md` "Final drain" (steps, source argument from
++  tag `linux-msft-wsl-6.18.33.2`, `perf_event_detach_bpf_prog` at
++  `kernel/trace/bpf_trace.c:1950-1972`, state rules); `docs/telemetry-v2.md`
++  §8.4 rule 5 and §8.6 table.
++- Audit correction made before acceptance: a first version accepted any two
++  consecutive equal reads out of up to five. U3 says "read twice"; reads
++  after an unequal pair have no new barrier behind them, so the drain now
++  reads exactly twice. The superseded runs on that version are kept under
++  `results/acceptance/m1b/s2.5/superseded/`.
++
++### Tests
++- `tests/test_drain_unit.py` (new, 26, unprivileged, fake BCC objects):
++  - order: detach, then barrier, then reads;
++  - a change seen only by the second read means unstable, and the retry
++    waits for a new barrier;
++  - a late `bglobal`-only write is detected; maps that keep changing never
++    drain;
++  - detach, barrier and read failures;
++  - empty vs non-empty pair maps; live/reclaimed/purged accounting, and
++    FAILs by exactly a missing or double term; orphan pair entries FAIL;
++  - reclaim bookkeeping; the drained snapshot (cross-check, last,
++    reclaim inside it without double counting); `exclude()` refused;
++  - counts-only drain and the unchanged v1 snapshot.
++- `tests/test_drain_bpf.py` (new, 7, privileged):
++  - a drain detaches all 11 probes (11 fewer perf_event fds) and the maps
++    stay unchanged while traced processes keep running;
++  - a drain during busy openat/execve/clone loops (3 repetitions) is stable,
++    and I-B5/I-B1′/I-B3′/I-B1 and I-B2 hold;
++  - ground truth with live, exited, reclaimed and purged helpers, exact;
++  - two reads of an attached program under activity differ;
++  - counts-only drain.
++
++### Validation (`results/acceptance/m1b/s2.5/`)
++- Baseline before any change: `make test` 525 passed, 1 skipped. The new
++  unit tests failed (26 of 26) before the implementation.
++- Root `pytest tests/ -m privileged`: 87 passed (80 earlier + 7 new);
++  `tests/test_drain_bpf.py` twice more, 7 passed each.
++  - 9 of 9 busy drains: `drained` at read 2, with the helpers cut off
++    mid-loop (openat 171,011–214,344 of 3,000,000; execve 108,983–135,056;
++    clone 2,107–2,381 of 40,000);
++  - every key balanced (I-B5, I-B1′, I-B3′, and I-B1 with `pairs_lost` 0
++    on all keys), and I-B2 on the drain read PASS;
++  - ground truth 26 = 26, 3 of 3;
++  - detach + barrier + reads took 1.32–1.47 s.
++
++  `bpf_stats_enabled` 0, no cgroups or containers left.
++- Counts-only equivalence: 34 of 34 fields identical to S1.
++- `make test` (py3.14): 74 C checks, 0 failures; 551 passed, 1 skipped.
++  py3.12 `make test-py`: 551 passed, 1 skipped. `make check` rc 0.
++- Not shown: a late writer was never observed (no unequal pair after the
++  barrier), so whether the barrier was necessary in these runs is not
++  demonstrated; the second read's detection was shown on attached probes
++  only.
+diff --git a/tests/test_drain_unit.py b/tests/test_drain_unit.py
+new file mode 100644
+index 0000000..71b0822
+--- /dev/null
++++ b/tests/test_drain_unit.py
+@@ -0,0 +1,468 @@
++"""Final drain (M1b S2.5, decision U3): detach, wait, read until stable.
++
++Unprivileged: BpfCollector runs against fake BCC objects whose map contents
++are scripted read by read, so every outcome (stable at the second read, a
++change seen only by the second read, never stable, detach/barrier/read
++failure) is deterministic. The real kernel path is tested in
++tests/test_drain_bpf.py.
++"""
++
++import copy
++from types import SimpleNamespace
++
++import pytest
++
++from processpulse import bigrams as bg
++from processpulse import bpf_collector as bc
++from processpulse.vocab import SYSCALLS
++
++TPS = bc.required_tracepoints(("counts", "bigrams"))
++N = len(SYSCALLS)
++OPENAT, EXECVE = SYSCALLS.index("openat"), SYSCALLS.index("execve")
++START_NEW = bg.MARKER_CODES["START_NEW"]
++
++
++# --- fake BCC objects -------------------------------------------------------------
++
++def counts_val(pairs_lost=0, **calls):
++    c = [0] * N
++    for name, n in calls.items():
++        c[SYSCALLS.index(name)] = n
++    return SimpleNamespace(c=c, pairs_lost=pairs_lost)
++
++
++def info_val(exited=0, ktime=1):
++    return SimpleNamespace(cgroup_id=7, last_ktime=ktime, host_tgid=1, level=2, container_pid=0,
++                           exited=exited, comm=b"p")
++
++
++class Scripted:
++    """A map whose items() returns the next scripted content on each call (the
++    last one repeats); deletions are recorded and applied to that content."""
++
++    def __init__(self, *contents, fail=False):
++        self.contents = [list(c) for c in contents] or [[]]
++        self.calls = 0
++        self.fail = fail
++        self.deleted = []
++        self.log = None
++
++    def _now(self):
++        return self.contents[min(self.calls, len(self.contents) - 1)]
++
++    def items(self):
++        if self.fail:
++            raise OSError("map read failed")
++        if self.log is not None:
++            self.log.append("read")
++        out = list(self._now())
++        self.calls += 1
++        return out
++
++    def items_lookup_batch(self):
++        return iter(self.items())
++
++    def keys(self):
++        return [k for k, _v in self._now()]
++
++    def Key(self, start, tgid, pad):                    # counts_t.Key(...) in snapshot()
++        return SimpleNamespace(start_ns=start, tgid=tgid)
++
++    def __delitem__(self, k):
++        self.deleted.append(k)
++        cur = self._now()
++        ident = _ident(k)
++        cur[:] = [(kk, v) for kk, v in cur if _ident(kk) != ident]
++
++
++def _ident(k):
++    if hasattr(k, "proc"):
++        return ("pair", k.proc.start_ns, k.proc.tgid, k.a, k.b)
++    if hasattr(k, "start_ns"):
++        return ("proc", k.start_ns, k.tgid)
++    return ("other", getattr(k, "value", k))
++
++
++class Health:
++    def __init__(self, values=None):
++        self.values = dict(values or {})
++
++    def __getitem__(self, idx):
++        return SimpleNamespace(value=self.values.get(bc.HEALTH_FIELDS[idx.value], 0))
++
++
++class BGlobal:
++    """The one-entry bglobal array; a test may move last_thread_full_ns."""
++
++    def __init__(self):
++        self.state = SimpleNamespace(armed_boot_ns=100, last_thread_full_ns=0, armed=1)
++        self.reads = 0
++        self.full_after = None            # read number from which a full-time appears
++
++    def __getitem__(self, idx):
++        assert idx.value == 0
++        self.reads += 1
++        if self.full_after is not None and self.reads >= self.full_after:
++            self.state.last_thread_full_ns = 999
++        return self.state
++
++
++class FakeBPF:
++    def __init__(self, tables, log, fail_detach=()):
++        self.tables = tables
++        self.tracepoint_fds = {tp.encode(): i for i, tp in enumerate(TPS)}
++        self.fail_detach = set(fail_detach)
++        self.log = log
++
++    def __getitem__(self, name):
++        return self.tables[name]
++
++    def detach_tracepoint(self, tp):
++        self.log.append(("detach", tp.decode()))
++        if tp.decode() in self.fail_detach:
++            raise Exception("Failed to detach BPF from tracepoint")
++        del self.tracepoint_fds[tp]
++
++    def num_open_tracepoints(self):
++        return len(self.tracepoint_fds)
++
++
++class Resolver:
++    def identity(self, cgroup_id):
++        return {"cgroup_id": cgroup_id}
++
++
++def ck(start, tgid):
++    return SimpleNamespace(start_ns=start, tgid=tgid)
++
++
++def pk(start, tgid, a, b):
++    return SimpleNamespace(proc=SimpleNamespace(start_ns=start, tgid=tgid), a=a, b=b)
++
++
++def pv(n):
++    return SimpleNamespace(value=n)
++
++
++def make(counts=([],), pairs=([],), info=None, caps=("counts", "bigrams"), health=None,
++         fail_detach=(), monkeypatch=None, barrier=None):
++    """A collector on fake maps; returns (collector, log)."""
++    log = []
++    c = bc.BpfCollector(capabilities=caps, resolver=Resolver())
++    c.distro_level, c.distro_pidns_ino, c.attached_since = 2, 4026531836, 1
++    tables = {"counts": Scripted(*counts),
++              "info": Scripted(*(info if info is not None else
++                                 [[(k, info_val()) for k, _v in counts[0]]])),
++              "threads": Scripted([]), "health": Health(health)}
++    if "bigrams" in caps:
++        tables["bigrams"] = Scripted(*pairs)
++        tables["bglobal"] = BGlobal()
++    tables["counts"].log = log
++    c.b = FakeBPF(tables, log, fail_detach)
++    if monkeypatch is not None:
++        monkeypatch.setattr(bc, "rcu_barrier", barrier or (lambda: log.append("barrier")))
++    return c, log
++
++
++# One idle process: 1 execve + 3 openat; pairs (START_NEW, execve) and (execve..)
++IDLE_COUNTS = [(ck(1, 10), counts_val(execve=1, openat=3))]
++IDLE_PAIRS = [(pk(1, 10, START_NEW, EXECVE), pv(1)), (pk(1, 10, EXECVE, OPENAT), pv(1)),
++              (pk(1, 10, OPENAT, OPENAT), pv(2))]
++
++
++# --- drain outcomes ----------------------------------------------------------------
++
++def test_drain_detaches_every_probe_then_waits_then_reads_until_two_reads_agree(monkeypatch):
++    c, log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch)
++    r = c.drain()
++    assert r["status"] == "drained" and r["drained"] is True and r["reason"] is None
++    assert r["reads"] == 2 and r["changed"] == []
++    assert sorted(r["detached"]) == sorted(TPS) and r["still_attached"] == []
++    assert r["barrier"] is True
++    detaches = [i for i, e in enumerate(log) if isinstance(e, tuple)]
++    assert len(detaches) == len(TPS)
++    b = log.index("barrier")
++    assert max(detaches) < b < log.index("read")                      # detach, wait, then read
++    assert [d for _op, d in log[:len(TPS)]] == list(TPS)              # syscall probes first
++    assert c.attached_tracepoints() == [] and c.b.num_open_tracepoints() == 0
++
++
++def test_the_second_read_detects_a_change_the_first_missed(monkeypatch):
++    late = [(ck(1, 10), counts_val(execve=1, openat=4))]             # one more entry in read 2
++    late_pairs = IDLE_PAIRS[:2] + [(pk(1, 10, OPENAT, OPENAT), pv(3))]
++    c, log = make(counts=(IDLE_COUNTS, late), pairs=(IDLE_PAIRS, late_pairs),
++                  monkeypatch=monkeypatch)
++    r = c.drain()
++    assert r["status"] == "unstable" and r["drained"] is False
++    assert r["reads"] == 2 and r["changed"] == ["bigrams", "counts"]
++    assert "differ" in r["reason"]
++    assert r["accounting"] is None                                    # nothing is claimed
++    with pytest.raises(RuntimeError, match="drained"):
++        c.drained_processes()
++    assert bg.check_ib2_drain_read(r).status == bg.NOT_APPLICABLE
++    # A retry waits for a new grace period before its own two reads.
++    r2 = c.drain()
++    assert log.count("barrier") == 2
++    assert r2["status"] == "drained" and r2["reads"] == 2 and r2["changed"] == []
++    assert r2["detached"] == [] and r2["still_attached"] == []
++    assert c.drain_result is r2
++    acc = r2["accounting"]                                            # the later, stable state
++    assert (acc["counts"], acc["pairs"], acc["pairs_lost"]) == (5, 5, 0)
++
++
++def test_a_late_write_to_bglobal_alone_is_detected(monkeypatch):
++    """A row-2 event writes only last_thread_full_ns (plus health): bglobal is compared too."""
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch)
++    c.b.tables["bglobal"].full_after = 2                              # appears in read 2
++    r = c.drain()
++    assert r["status"] == "unstable" and r["changed"] == ["bglobal"]
++
++
++def test_a_map_that_keeps_changing_is_never_drained(monkeypatch):
++    states = [[(ck(1, 10), counts_val(openat=i))] for i in range(1, 10)]
++    c, _log = make(counts=states, info=[[(ck(1, 10), info_val())]], monkeypatch=monkeypatch)
++    for _ in range(3):
++        r = c.drain()
++        assert r["status"] == "unstable" and r["changed"] == ["counts"]
++    with pytest.raises(RuntimeError, match="not drained"):
++        c.drained_processes()
++
++
++def test_a_detach_failure_fails_the_drain_before_the_barrier_and_any_read(monkeypatch):
++    c, log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch,
++                  fail_detach=("syscalls:sys_enter_openat",))
++    r = c.drain()
++    assert r["status"] == "failed" and r["drained"] is False
++    assert r["still_attached"] == ["syscalls:sys_enter_openat"]
++    assert "syscalls:sys_enter_openat" in r["reason"]
++    assert len(r["detached"]) == len(TPS) - 1                         # the others are detached
++    assert "barrier" not in log and "read" not in log
++    assert r["barrier"] is False and r["reads"] == 0 and r["accounting"] is None
++
++
++def test_a_barrier_failure_fails_the_drain_before_any_read(monkeypatch):
++    log_holder = []
++
++    def failing():
++        log_holder.append("barrier")
++        raise OSError(22, "membarrier failed")
++    c, log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch,
++                  barrier=failing)
++    r = c.drain()
++    assert log_holder == ["barrier"] and "read" not in log
++    assert r["status"] == "failed" and r["barrier"] is False and r["reads"] == 0
++    assert "membarrier" in r["reason"] and r["still_attached"] == []
++
++
++def test_a_read_failure_fails_the_drain(monkeypatch):
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch)
++    c.b.tables["bigrams"].fail = True
++    r = c.drain()
++    assert r["status"] == "failed" and r["drained"] is False and r["accounting"] is None
++    assert "map read failed" in r["reason"]
++
++
++def test_drain_needs_a_started_collector():
++    with pytest.raises(RuntimeError, match="started"):
++        bc.BpfCollector(capabilities=("counts", "bigrams")).drain()
++
++
++# --- accounting ----------------------------------------------------------------------
++
++def test_empty_bigram_map_is_an_accounted_table_not_missing_data(monkeypatch):
++    counts = [(ck(1, 10), counts_val(pairs_lost=4, execve=1, openat=3))]   # all pre-arm
++    c, _log = make(counts=(counts,), pairs=([],), monkeypatch=monkeypatch)
++    r = c.drain()
++    acc = r["accounting"]
++    assert (acc["keys"], acc["counts"], acc["pairs"], acc["pairs_lost"]) == (1, 4, 0, 4)
++    assert acc["orphan_entries"] == 0 and acc["zero_entries"] == 0
++    ((key, (proc, table)),) = c.drained_processes().items()
++    assert key == (1, 10) and table == {} and proc["pairs_lost"] == 4
++    assert bg.check_ib1_prime(proc, table, "drained").status == bg.PASS
++    assert bg.check_ib2_drain_read(r).status == bg.PASS
++
++
++def test_accounting_adds_live_reclaimed_and_purged_terms_once(monkeypatch):
++    counts = IDLE_COUNTS + [(ck(2, 20), counts_val(pairs_lost=1, openat=2))]
++    pairs = IDLE_PAIRS + [(pk(2, 20, START_NEW, OPENAT), pv(1)),
++                          (pk(2, 20, OPENAT, OPENAT), pv(0))]        # zero entry: not loss
++    c, _log = make(counts=(counts,), pairs=(pairs,), monkeypatch=monkeypatch)
++    c.reclaimed_totals = {"counts": 7, "pairs": 6, "pairs_lost": 1}
++    c.purged = {"counts": 5, "pairs": 3, "pairs_lost": 2}
++    r = c.drain()
++    acc = r["accounting"]
++    assert (acc["keys"], acc["counts"], acc["pairs"], acc["pairs_lost"]) == (2, 6, 5, 1)
++    assert acc["zero_entries"] == 1
++    assert acc["reclaimed"] == {"counts": 7, "pairs": 6, "pairs_lost": 1}
++    assert acc["purged"] == {"counts": 5, "pairs": 3, "pairs_lost": 2}
++    assert acc["bigram_health"]["purged_pairs_lost"] == 2
++    res = bg.check_ib2_drain_read(r)
++    assert res.status == bg.PASS, res
++    assert res.detail["lhs"] == res.detail["rhs"] == 6 + 7 + 5
++
++
++@pytest.mark.parametrize("term,field,delta", [
++    ("reclaimed", "counts", 4),          # a reclaimed key counted again on one side only
++    ("purged", "pairs_lost", 1),         # purged_pairs_lost left out (S2.2 §8.5 A)
++    ("reclaimed", "pairs", -1)])
++def test_ib2_drain_read_fails_by_exactly_the_missing_or_double_term(monkeypatch, term, field, delta):
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch)
++    c.reclaimed_totals = {"counts": 3, "pairs": 3, "pairs_lost": 0}
++    c.purged = {"counts": 2, "pairs": 1, "pairs_lost": 1}
++    r = c.drain()
++    assert bg.check_ib2_drain_read(r).status == bg.PASS
++    bad = copy.deepcopy(r)
++    bad["accounting"][term][field] += delta
++    res = bg.check_ib2_drain_read(bad)
++    assert res.status == bg.FAIL
++    lhs_terms = field == "counts"
++    assert res.detail["lhs"] - res.detail["rhs"] == (delta if lhs_terms else -delta)
++
++
++def test_pair_entries_without_a_counts_entry_fail_ib2(monkeypatch):
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS + [(pk(9, 90, OPENAT, OPENAT), pv(2))],),
++                   monkeypatch=monkeypatch)
++    r = c.drain()
++    assert r["accounting"]["orphan_entries"] == 1 and r["accounting"]["orphan_pairs"] == 2
++    res = bg.check_ib2_drain_read(r)
++    assert res.status == bg.FAIL and "without a counts entry" in res.reason
++
++
++def test_ib2_drain_read_preconditions():
++    assert bg.check_ib2_drain_read(None).status == bg.NOT_APPLICABLE
++    assert bg.check_ib2_drain_read({"drained": False, "accounting": None}).status == bg.NOT_APPLICABLE
++    res = bg.check_ib2_drain_read({"drained": True, "accounting": None})
++    assert res.status == bg.NOT_APPLICABLE and "bigram" in res.reason
++
++
++def test_drained_processes_feed_the_quiescent_checkers(monkeypatch):
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch)
++    c.drain()
++    procs = c.drained_processes()
++    proc, table = procs[(1, 10)]
++    assert table == {("START_NEW", "execve"): 1, ("execve", "openat"): 1, ("openat", "openat"): 2}
++    assert proc["counts"]["openat"] == 3 and proc["exited"] is False
++    for check in (bg.check_ib1, bg.check_ib1_prime, bg.check_ib3_prime):
++        assert check(proc, table, "drained").status == bg.PASS
++    assert bg.check_ib5(table).status == bg.PASS
++
++
++def test_a_marker_as_second_element_in_the_drained_read_is_refused(monkeypatch):
++    c, _log = make(counts=(IDLE_COUNTS,), pairs=([(pk(1, 10, OPENAT, START_NEW), pv(1))],),
++                   monkeypatch=monkeypatch)
++    assert c.drain()["status"] == "drained"                           # stability is about change
++    with pytest.raises(bg.DecodeError, match="I-B5"):
++        c.drained_processes()
++
++
++def test_counts_only_drain_has_no_bigram_accounting(monkeypatch):
++    c, log = make(counts=(IDLE_COUNTS,), caps=("counts",), monkeypatch=monkeypatch)
++    r = c.drain()
++    assert r["status"] == "drained" and r["accounting"] is None
++    assert "bigrams" not in c.b.tables
++    res = bg.check_ib2_drain_read(r)
++    assert res.status == bg.NOT_APPLICABLE
++    proc, table = c.drained_processes()[(1, 10)]
++    assert proc["pairs_lost"] is None and table == {}
++
++
++# --- exclusion and snapshots around the drain -------------------------------------------
++
++def test_exclude_is_refused_once_a_drain_started(monkeypatch):
++    c, log = make(counts=(IDLE_COUNTS,), pairs=(IDLE_PAIRS,), monkeypatch=monkeypatch,
++                  fail_detach=("sched:sched_process_exit",))
++    assert c.drain()["status"] == "failed"
++    c.b.tables["excluded"] = Scripted()
++    n = len(log)
++    with pytest.raises(RuntimeError, match="drain"):
++        c.exclude(10)
++    assert log[n:] == []                                              # no barrier, no purge
++    assert c.purged == {"counts": 0, "pairs": 0, "pairs_lost": 0}
++
++
++def _exited_then_reclaimable(monkeypatch):
++    """One idle live process and one exited process (1 execve + 2 open)."""
++    counts = IDLE_COUNTS + [(ck(2, 20), counts_val(execve=1, open=2))]
++    pairs = IDLE_PAIRS + [(pk(2, 20, START_NEW, EXECVE), pv(1)),
++                          (pk(2, 20, EXECVE, SYSCALLS.index("open")), pv(1)),
++                          (pk(2, 20, SYSCALLS.index("open"), SYSCALLS.index("open")), pv(1))]
++    info = [(ck(1, 10), info_val()), (ck(2, 20), info_val(exited=1))]
++    c, log = make(counts=(counts,), pairs=(pairs,), info=[info], monkeypatch=monkeypatch)
++    c.track_removals = True
++    return c, log
++
++
++def test_reclaim_records_the_values_it_removes(monkeypatch):
++    c, _log = _exited_then_reclaimable(monkeypatch)
++    s1 = c.snapshot()
++    assert [p["exited"] for p in s1["procs"]] == [False, True]
++    assert c.reclaimed_totals == {"counts": 0, "pairs": 0, "pairs_lost": 0}
++    c.snapshot()                                                      # unchanged: reclaimed
++    assert c.reclaimed == 1
++    assert c.reclaimed_totals == {"counts": 3, "pairs": 3, "pairs_lost": 0}
++    assert len(c.b.tables["bigrams"].deleted) == 3
++
++
++def test_reclaim_of_a_key_whose_entry_is_gone_adds_nothing(monkeypatch):
++    c, _log = _exited_then_reclaimable(monkeypatch)
++    c.snapshot()
++    del c.b.tables["counts"][ck(2, 20)]                               # e.g. purged meanwhile
++    c.snapshot()
++    assert c.reclaimed == 1 and c.reclaimed_totals == {"counts": 0, "pairs": 0, "pairs_lost": 0}
++
++
++def test_ib2_holds_across_reclaim_on_the_drained_read(monkeypatch):
++    c, _log = _exited_then_reclaimable(monkeypatch)
++    c.snapshot()
++    c.snapshot()                                                      # key 20 reclaimed
++    r = c.drain()
++    assert r["accounting"]["keys"] == 1                               # 20 is gone from the maps
++    res = bg.check_ib2_drain_read(r)
++    assert res.status == bg.PASS and res.detail["lhs"] == 4 + 3       # live 4 + reclaimed 3
++
++
++def test_the_drained_snapshot_is_cross_checked_and_is_the_last(monkeypatch):
++    c, _log = _exited_then_reclaimable(monkeypatch)
++    c.snapshot()                                                      # 20 reported exited
++    assert c.last_snapshot_drained is False
++    r = c.drain()
++    assert r["drained"] and r["accounting"]["keys"] == 2
++    s = c.snapshot()                                                  # the drained snapshot
++    assert c.last_snapshot_drained is True
++    assert [p["key"]["tgid"] for p in s["procs"]] == [10]             # 20 reclaimed in it
++    assert c.take_removed()["exited"][0]["tgid"] == 20
++    assert c.reclaimed_totals == {"counts": 3, "pairs": 3, "pairs_lost": 0}
++    # The drain-time accounting is a copy: reclaiming 20 now must not count it twice.
++    assert bg.check_ib2_drain_read(r).status == bg.PASS
++    with pytest.raises(RuntimeError, match="last"):
++        c.snapshot()
++    with pytest.raises(RuntimeError, match="last"):
++        c.drain()
++
++
++def test_a_map_change_after_the_drain_fails_the_drained_snapshot(monkeypatch):
++    c, _log = _exited_then_reclaimable(monkeypatch)
++    assert c.drain()["drained"]
++    c.b.tables["counts"].contents[-1][0] = (ck(1, 10), counts_val(execve=1, openat=9))
++    with pytest.raises(RuntimeError, match="changed after the drain"):
++        c.snapshot()
++    assert c.last_snapshot_drained is False
++
++
++def test_snapshots_after_an_unsuccessful_drain_are_ordinary(monkeypatch):
++    states = [[(ck(1, 10), counts_val(openat=i))] for i in range(1, 10)]
++    c, _log = make(counts=states, info=[[(ck(1, 10), info_val())]], monkeypatch=monkeypatch)
++    assert c.drain()["status"] == "unstable"
++    c.snapshot()
++    c.snapshot()
++    assert c.last_snapshot_drained is False
++
++
++def test_counts_only_snapshot_path_is_unchanged_without_a_drain(monkeypatch):
++    c, _log = make(counts=(IDLE_COUNTS,), caps=("counts",), monkeypatch=monkeypatch)
++    rec = c.snapshot()
++    assert rec["type"] == "syscall_snapshot" and rec["v"] == 1
++    assert set(rec) == {"type", "v", "seq", "t_mono_ns", "interval_ns", "resource_seq", "probe",
++                        "calibration", "procs", "health"}
++    assert c.last_snapshot_drained is False
++    assert c.reclaimed_totals == {"counts": 0, "pairs": 0, "pairs_lost": 0}
+diff --git a/tests/test_drain_bpf.py b/tests/test_drain_bpf.py
+new file mode 100644
+index 0000000..75fde27
+--- /dev/null
++++ b/tests/test_drain_bpf.py
+@@ -0,0 +1,270 @@
++"""Privileged tests of the final drain (M1b S2.5, decision U3, hypothesis H-DRAIN).
++
++drain() detaches every probe, waits for in-flight invocations (rcu_barrier)
++and reads every map twice, requiring equal reads. These tests check
++on the real kernel that:
++- every probe is detached (no tracepoint, no perf_event fd left) and the
++  maps stop changing although the traced processes keep running;
++- a drain taken while helpers are busy in tight loops is stable and every
++  key balances: I-B1' and I-B3' for every process of the distro, I-B1 for
++  every key without pair loss, and I-B2 over the whole epoch;
++- with scripted helpers (live, exited, reclaimed, purged) the drained values
++  equal the script's ground truth, exactly;
++- the double-read comparison sees real activity on attached probes (this
++  shows the detector works; it is not a reproduction of a late writer);
++- a counts-only drain behaves the same without bigram accounting.
++
++Each drain ends its collector's epoch, so every test loads a fresh program.
++Run as root:  make test-privileged
++"""
++
++import os
++
++import pytest
++
++from conftest import wait_until
++from processpulse import bigrams as bg
++from processpulse import bpf_collector as bc
++from processpulse.identity import CgroupResolver
++from processpulse.vocab import SYSCALLS
++
++pytestmark = [pytest.mark.privileged, pytest.mark.bpf]
++
++CAPS = ("counts", "bigrams")
++LAUNCH = [("thread", "m", "new"), ("call", "m", "execve"), ("exec", "m")]
++NO_LOSS = dict.fromkeys(bg.GLOBAL_LOSS_FIELDS, 0)
++
++
++def fresh(caps=CAPS):
++    return bc.BpfCollector(capabilities=caps, resolver=CgroupResolver(min_rescan_s=0)).start()
++
++
++def perf_event_fds():
++    n = 0
++    for fd in os.listdir("/proc/self/fd"):
++        try:
++            if os.readlink(f"/proc/self/fd/{fd}") == "anon_inode:[perf_event]":
++                n += 1
++        except OSError:
++            pass
++    return n
++
++
++def count_of(c, tgid, syscall):
++    for k, v in c.b["counts"].items():
++        if k.tgid == tgid:
++            return v.c[SYSCALLS.index(syscall)]
++    return None
++
++
++def send(h, cmd, n):
++    h.proc.stdin.write(f"{cmd} {n}\n")
++    h.proc.stdin.flush()
++
++
++def reply(h, cmd, n, timeout_note=""):
++    r = h.proc.stdout.readline().split()
++    assert r[:4] == ["DONE", cmd, str(n), "errors=0"], (r, timeout_note)
++
++
++def wait_active(c, tgid, syscall, above):
++    assert wait_until(lambda: (count_of(c, tgid, syscall) or 0) > above, timeout=30, step=0.001), \
++        f"helper {tgid} never became active"
++
++
++def of_pid(procs, pid):
++    keys = [k for k in procs if k[1] == pid]
++    assert len(keys) == 1, keys
++    return procs[keys[0]]
++
++
++def assert_every_key_balances(procs, record_property=None):
++    """I-B5, I-B1', I-B3' for every key; I-B1 for every key without pair loss."""
++    lossy = 0
++    for key, (p, t) in procs.items():
++        assert bg.check_ib5(t, key).status == bg.PASS
++        for check in (bg.check_ib1_prime, bg.check_ib3_prime):
++            r = check(p, t, "drained", key)
++            assert r.status == bg.PASS, r
++        r = bg.check_ib1(p, t, "drained", key)
++        if p["pairs_lost"]:
++            lossy += 1
++            assert r.status == bg.NOT_APPLICABLE
++        else:
++            assert r.status == bg.PASS, r
++    if record_property:
++        record_property("keys", len(procs))
++        record_property("keys_with_pairs_lost", lossy)
++    return lossy
++
++
++def test_drain_detaches_every_probe_and_freezes_the_maps(spawn_helper):
++    c = fresh()
++    try:
++        h = spawn_helper()
++        h.do("openat", 5)
++        fds_before = perf_event_fds()
++        assert len(c.attached_tracepoints()) == len(bc.required_tracepoints(CAPS))
++        r = c.drain()
++        assert r["status"] == "drained" and r["drained"] is True, r
++        assert r["barrier"] is True and r["still_attached"] == [] and r["reads"] == 2
++        assert sorted(r["detached"]) == sorted(bc.required_tracepoints(CAPS))
++        assert c.attached_tracepoints() == [] and c.b.num_open_tracepoints() == 0
++        assert perf_event_fds() == fds_before - len(bc.required_tracepoints(CAPS))
++        p, t = of_pid(c.drained_processes(), h.pid)
++        o = bg.expected_pairs(LAUNCH + [("call", "m", "openat")] * 5)
++        assert p["counts"] == o.counts and t == o.pairs and p["pairs_lost"] == 0
++        h.do("openat", 1000)                                  # no probe sees these
++        h2 = spawn_helper()                                   # nor a new process
++        h2.do("execve", 10)
++        assert count_of(c, h.pid, "openat") == 5
++        assert count_of(c, h2.pid, "execve") is None
++        c.snapshot()                                          # raises if any map changed
++        assert c.last_snapshot_drained is True
++    finally:
++        c.close()
++
++
++@pytest.mark.parametrize("rep", range(3))
++def test_a_drain_during_busy_loops_is_stable_and_every_key_balances(spawn_helper, record_property,
++                                                                    rep):
++    """Three helpers keep making tracked calls (openat, execve, and clone, whose
++    children exit) while the probes are detached. The drain must be stable, and
++    the values it reads must balance for every key of the distro (H-DRAIN): a
++    probe cut off between its count and its pair would break I-B1'."""
++    c = fresh()
++    busy = [("openat", 3000000), ("execve", 3000000), ("clone", 40000)]
++    helpers = []
++    try:
++        for cmd, n in busy:
++            h = spawn_helper()
++            send(h, cmd, n)
++            helpers.append((h, cmd, n))
++        for h, cmd, _n in helpers:
++            wait_active(c, h.pid, cmd, 1000)
++        r = c.drain()
++        assert r["status"] == "drained", r
++        procs = c.drained_processes()
++        for h, cmd, n in helpers:                             # detached mid-loop
++            p, _t = of_pid(procs, h.pid)
++            at = p["counts"][cmd] - (1 if cmd == "execve" else 0)
++            record_property(f"{cmd}_at_drain", at)
++            assert 1000 < at < n, (cmd, at, n)
++        record_property("reads", r["reads"])
++        record_property("drain_ms", round(r["drain_ns"] / 1e6, 1))
++        assert_every_key_balances(procs, record_property)
++        ib2 = bg.check_ib2_drain_read(r)
++        record_property("ib2_lhs", ib2.detail.get("lhs"))
++        assert ib2.status == bg.PASS, ib2
++        for h, cmd, n in helpers:                             # the loops end after the drain
++            reply(h, cmd, n)
++        rec = c.snapshot()                                    # raises if any map changed
++        assert c.last_snapshot_drained is True
++        for h, cmd, _n in helpers:
++            (sp,) = [x for x in rec["procs"] if x["key"]["tgid"] == h.pid]
++            assert sp["counts"] == of_pid(procs, h.pid)[0]["counts"]
++        with pytest.raises(RuntimeError, match="last"):
++            c.snapshot()
++    finally:
++        for h, _cmd, _n in helpers:
++            h.exit(timeout=60)
++        c.close()
++
++
++def test_drained_values_equal_the_ground_truth_of_live_exited_reclaimed_and_purged(
++        spawn_helper, record_property):
++    c = fresh()
++    try:
++        g0 = c.global_losses()
++        a, b, x, d = spawn_helper(), spawn_helper(), spawn_helper(), spawn_helper()
++        a.do("openat", 10)
++        b.do("open", 5)
++        x.do("execve", 3)
++        d.do("openat", 4)
++        tally = (1 + 10) + (1 + 5) + (1 + 3) + (1 + 4)
++        assert b.exit() == 0
++        s1 = c.snapshot()                                     # b reported exited
++        (pb,) = [p for p in s1["procs"] if p["key"]["tgid"] == b.pid and p["exited"]]
++        (kb,) = [k for k in c.last_bigrams["tables"] if k[1] == b.pid]
++        tb = c.last_bigrams["tables"][kb]
++        pb = {"counts": pb["counts"], "pairs_lost": c.last_bigrams["pairs_lost"][kb]}
++        reclaimed0 = c.reclaimed
++        c.snapshot()                                          # b reclaimed
++        assert c.reclaimed > reclaimed0
++        assert count_of(c, b.pid, "open") is None
++        assert x.exit() == 0
++        c.snapshot()                                          # x reported exited, kept
++        purged0 = dict(c.purged)
++        c.exclude(d.pid)
++        purged = {k: c.purged[k] - purged0[k] for k in purged0}
++        c.unexclude(d.pid)
++        assert purged == {"counts": 5, "pairs": 5, "pairs_lost": 0}
++
++        r = c.drain()
++        assert r["status"] == "drained", r
++        losses = bg.loss_window(g0, c.global_losses())
++        assert losses == NO_LOSS
++        procs = c.drained_processes()
++        pa, ta = of_pid(procs, a.pid)
++        px, tx = of_pid(procs, x.pid)
++        assert px["exited"] is True and pa["exited"] is False
++        assert not [k for k in procs if k[1] in (b.pid, d.pid)]
++        res = bg.check_ib2_ground_truth_scope([(pa, ta), (pb, tb), (px, tx)], tally, "drained",
++                                              losses, purged)
++        record_property("expected", tally)
++        record_property("counts_side", res.detail.get("counts_side"))
++        assert res.status == bg.PASS, res
++        for p, t, cmd, n in ((pa, ta, "openat", 10), (pb, tb, "open", 5), (px, tx, "execve", 3)):
++            o = bg.expected_pairs(LAUNCH + [("call", "m", cmd)] * n)
++            assert p["counts"] == o.counts and t == o.pairs and p["pairs_lost"] == 0
++            for check in (bg.check_ib3_exact, bg.check_ib4_exact):
++                assert check(p, t, o, "drained", losses=losses).status == bg.PASS
++        assert_every_key_balances(procs, record_property)
++        assert bg.check_ib2_drain_read(r).status == bg.PASS
++
++        with pytest.raises(RuntimeError, match="drain"):
++            c.exclude(a.pid)
++        reclaimed1 = c.reclaimed
++        rec = c.snapshot()                                    # the drained snapshot reclaims x
++        assert c.last_snapshot_drained is True
++        assert c.reclaimed > reclaimed1
++        assert not [p for p in rec["procs"] if p["key"]["tgid"] == x.pid]
++    finally:
++        c.close()
++
++
++def test_the_double_read_sees_activity_on_attached_probes(spawn_helper):
++    """Two consecutive reads of an attached program while a helper is busy differ,
++    so an unequal pair is detected; this is the comparison drain() relies on."""
++    c = fresh()
++    h = spawn_helper()
++    try:
++        send(h, "openat", 3000000)
++        wait_active(c, h.pid, "openat", 1000)
++        first = c._read_state()
++        second = c._read_state()
++        assert first != second
++        assert first["counts"] != second["counts"]
++        reply(h, "openat", 3000000)
++    finally:
++        h.exit(timeout=60)
++        c.close()
++
++
++def test_counts_only_drain(spawn_helper):
++    c = fresh(("counts",))
++    try:
++        h = spawn_helper()
++        h.do("openat", 3)
++        r = c.drain()
++        assert r["status"] == "drained" and r["accounting"] is None
++        assert bg.check_ib2_drain_read(r).status == bg.NOT_APPLICABLE
++        p, t = of_pid(c.drained_processes(), h.pid)
++        assert p["counts"] == dict(dict.fromkeys(SYSCALLS, 0), execve=1, openat=3)
++        assert p["pairs_lost"] is None and t == {}
++        h.do("openat", 100)
++        rec = c.snapshot()                                    # raises if any map changed
++        assert rec["type"] == "syscall_snapshot" and rec["v"] == 1
++        assert c.last_snapshot_drained is True
++    finally:
++        c.close()

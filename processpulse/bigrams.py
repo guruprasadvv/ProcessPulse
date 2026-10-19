@@ -299,6 +299,43 @@ def check_ib2_drained(rc):
                   "" if lhs == rhs else "global conservation broken", detail)
 
 
+def check_ib2_drain_read(drain):
+    """I-B2 on the collector's own drained read (BpfCollector.drain(), S2.5):
+
+        live C' + reclaimed C' + purged_counts
+            = live B + live pairs_lost + reclaimed B + reclaimed pairs_lost
+              + purged_pairs + purged_pairs_lost
+
+    The equation of check_ib2_drained, with the live terms taken from the
+    stable read of the maps (every key with a counts entry) instead of an
+    emitted stream, and the reclaimed terms from the collector's reclaim
+    totals (the values of each key reclaimed as exited, unchanged since its
+    exit report). Each key is in exactly one term: reclaim and purge delete
+    the entries they account for. Preconditions: drained (detached, barrier,
+    two equal reads) and the bigram capability selected. A pair entry
+    without a counts entry belongs to no term, so it is a FAIL.
+    """
+    name = "I-B2-drain"
+    if not drain or not drain.get("drained"):
+        return Result(name, NOT_APPLICABLE, None, "no drained read (drain not run or not stable)")
+    acc = drain.get("accounting")
+    if acc is None:
+        return Result(name, NOT_APPLICABLE, None, "bigram capability not selected")
+    if acc["orphan_entries"]:
+        return Result(name, FAIL, None,
+                      f"{acc['orphan_entries']} pair entries without a counts entry "
+                      f"({acc['orphan_pairs']} pairs) belong to no I-B2 term")
+    rec, pur = acc["reclaimed"], acc["purged"]
+    lhs = acc["counts"] + rec["counts"] + pur["counts"]
+    rhs = (acc["pairs"] + acc["pairs_lost"] + rec["pairs"] + rec["pairs_lost"]
+           + pur["pairs"] + pur["pairs_lost"])
+    detail = {"lhs": lhs, "rhs": rhs, "keys_live": acc["keys"], "live_counts": acc["counts"],
+              "live_pairs": acc["pairs"], "live_pairs_lost": acc["pairs_lost"],
+              "reclaimed": dict(rec), "purged": dict(pur)}
+    return Result(name, PASS if lhs == rhs else FAIL, None,
+                  "" if lhs == rhs else "global conservation broken", detail)
+
+
 def check_ib2_ground_truth(rc, observed_entries):
     """I-B2 against independent ground truth (the v2 §4 form of I-B2):
 

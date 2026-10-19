@@ -581,3 +581,96 @@ Step 2 of the S2 sequence. No BPF, emitter, agent or kernel change.
 - Counts-only equivalence: 34 of 34 fields identical to S1.
 - `make test` (py3.14): 74 C checks, 0 failures; 525 passed, 1 skipped.
   py3.12 `make test-py`: 525 passed, 1 skipped. `make check` rc 0.
+
+## 2026-10-19 — M1b S2.5: final drain (detach, barrier, double read) (uncommitted)
+
+Contract: decision U3 (approved with A8/U1–U10): detach every probe, keep the
+maps, read twice and require equal reads before any I-B2 claim (hypothesis
+H-DRAIN); design §3.6 (`drain()` in the collector), §4 test matrix row
+"I-B2 drained". No schema, emitter, agent or BPF-source change: writing
+`drained: true` into the end record is S2.6.
+
+### Changes
+- `processpulse/bpf_collector.py`:
+  - `drain()`:
+    1. detaches every tracepoint (BCC `detach_tracepoint`, syscall probes
+       first) and fails if any stays attached;
+    2. calls `rcu_barrier()` (the purge's `membarrier(MEMBARRIER_CMD_GLOBAL)`)
+       and fails if it fails;
+    3. reads every map a probe writes (`counts` with `pairs_lost`, `info`
+       with `last_ktime`, `threads` with `prev`, `bigrams`, `bglobal`, all
+       health counters) plus the userspace purge and reclaim totals, twice.
+
+    Equal reads mean `drained`; unequal reads mean `unstable` (no claim,
+    `changed` lists the maps); any failure is `failed`. A retry re-runs all
+    three steps, including the barrier.
+  - `accounting` (bigrams only, only when drained) holds the I-B2 terms of
+    the stable read, with copies of the reclaim and purge totals;
+    `drained_processes()` gives per-key values for the quiescent checkers.
+  - `reclaimed_totals` (counts, pairs, `pairs_lost` of keys removed by the
+    two-phase exit reclaim; a key whose counts entry is already gone adds
+    nothing).
+  - Epoch end:
+    - `exclude()` is refused once `drain()` starts (a lock serialises them);
+      the purge body is unchanged (now `_exclude()`, flag → barrier → purge);
+    - after a successful drain exactly one `snapshot()` is allowed (the
+      drained snapshot): its read must equal the drain's, and it sets
+      `last_snapshot_drained`;
+    - a later `snapshot()`/`drain()` raises.
+- `processpulse/bigrams.py`: `check_ib2_drain_read()`. It is the approved
+  I-B2 equation (S2.2 §8.5 A) on the drained read, with live terms from the
+  maps and reclaimed terms from `reclaimed_totals`. A pair entry without a
+  counts entry is a FAIL.
+- Docs: `docs/bpf-collector.md` "Final drain" (steps, source argument from
+  tag `linux-msft-wsl-6.18.33.2`, `perf_event_detach_bpf_prog` at
+  `kernel/trace/bpf_trace.c:1950-1972`, state rules); `docs/telemetry-v2.md`
+  §8.4 rule 5 and §8.6 table.
+- Audit correction made before acceptance: a first version accepted any two
+  consecutive equal reads out of up to five. U3 says "read twice"; reads
+  after an unequal pair have no new barrier behind them, so the drain now
+  reads exactly twice. The superseded runs on that version are kept under
+  `results/acceptance/m1b/s2.5/superseded/`.
+
+### Tests
+- `tests/test_drain_unit.py` (new, 26, unprivileged, fake BCC objects):
+  - order: detach, then barrier, then reads;
+  - a change seen only by the second read means unstable, and the retry
+    waits for a new barrier;
+  - a late `bglobal`-only write is detected; maps that keep changing never
+    drain;
+  - detach, barrier and read failures;
+  - empty vs non-empty pair maps; live/reclaimed/purged accounting, and
+    FAILs by exactly a missing or double term; orphan pair entries FAIL;
+  - reclaim bookkeeping; the drained snapshot (cross-check, last,
+    reclaim inside it without double counting); `exclude()` refused;
+  - counts-only drain and the unchanged v1 snapshot.
+- `tests/test_drain_bpf.py` (new, 7, privileged):
+  - a drain detaches all 11 probes (11 fewer perf_event fds) and the maps
+    stay unchanged while traced processes keep running;
+  - a drain during busy openat/execve/clone loops (3 repetitions) is stable,
+    and I-B5/I-B1′/I-B3′/I-B1 and I-B2 hold;
+  - ground truth with live, exited, reclaimed and purged helpers, exact;
+  - two reads of an attached program under activity differ;
+  - counts-only drain.
+
+### Validation (`results/acceptance/m1b/s2.5/`)
+- Baseline before any change: `make test` 525 passed, 1 skipped. The new
+  unit tests failed (26 of 26) before the implementation.
+- Root `pytest tests/ -m privileged`: 87 passed (80 earlier + 7 new);
+  `tests/test_drain_bpf.py` twice more, 7 passed each.
+  - 9 of 9 busy drains: `drained` at read 2, with the helpers cut off
+    mid-loop (openat 171,011–214,344 of 3,000,000; execve 108,983–135,056;
+    clone 2,107–2,381 of 40,000);
+  - every key balanced (I-B5, I-B1′, I-B3′, and I-B1 with `pairs_lost` 0
+    on all keys), and I-B2 on the drain read PASS;
+  - ground truth 26 = 26, 3 of 3;
+  - detach + barrier + reads took 1.32–1.47 s.
+
+  `bpf_stats_enabled` 0, no cgroups or containers left.
+- Counts-only equivalence: 34 of 34 fields identical to S1.
+- `make test` (py3.14): 74 C checks, 0 failures; 551 passed, 1 skipped.
+  py3.12 `make test-py`: 551 passed, 1 skipped. `make check` rc 0.
+- Not shown: a late writer was never observed (no unequal pair after the
+  barrier), so whether the barrier was necessary in these runs is not
+  demonstrated; the second read's detection was shown on attached probes
+  only.

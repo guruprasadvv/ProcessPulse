@@ -1,0 +1,4 @@
+privileged-suite rc=0
+drain run 01 rc=0
+drain run 02 rc=0
+equivalence done
