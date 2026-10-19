@@ -1,0 +1,42 @@
+{
+  "capabilities": [
+    "counts"
+  ],
+  "compilations": [
+    {
+      "name": "calibrate",
+      "ns": 7332629035
+    },
+    {
+      "name": "unified",
+      "ns": 7511655158
+    }
+  ],
+  "tracepoints": [
+    "sched:sched_process_exec",
+    "sched:sched_process_exit",
+    "syscalls:sys_enter_clone",
+    "syscalls:sys_enter_clone3",
+    "syscalls:sys_enter_execve",
+    "syscalls:sys_enter_execveat",
+    "syscalls:sys_enter_fork",
+    "syscalls:sys_enter_open",
+    "syscalls:sys_enter_openat",
+    "syscalls:sys_enter_openat2",
+    "syscalls:sys_enter_vfork"
+  ],
+  "open_tracepoints": 11,
+  "vocabulary": "v1-3aba869d1752",
+  "max_procs": 16384,
+  "max_threads": 32768,
+  "bpf_prog_fds_held": 11,
+  "thread_health_at_start": {
+    "thread_map_full": 0,
+    "thread_slot_stale": 0,
+    "thread_slots_cleaned": 0,
+    "exec_refreshes": 0,
+    "thread_slots": 0,
+    "thread_capacity": 32768
+  },
+  "bpf_prog_fds_after_close": 0
+}

@@ -18,7 +18,7 @@ import shutil
 import subprocess
 import sys
 
-from .syscalls import SYSCALLS
+from .bpf_collector import required_tracepoints
 
 TRACEFS = "/sys/kernel/tracing"
 REQUIRED = ("root", "bcc_import", "tracefs", "tracepoints", "kernel_headers")
@@ -62,7 +62,7 @@ def run_preflight(attempt_modprobe=True):
     events = os.path.join(TRACEFS, "events")
     if os.access(events, os.R_OK | os.X_OK):
         add("tracefs", "PASS", f"{events} readable")
-        wanted = [f"syscalls/sys_enter_{s}" for s in SYSCALLS] + ["sched/sched_process_exit"]
+        wanted = [tp.replace(":", "/") for tp in required_tracepoints()]
         missing = [w for w in wanted if not os.path.isdir(os.path.join(events, w))]
         add("tracepoints", "FAIL" if missing else "PASS",
             f"missing: {missing}" if missing else f"{len(wanted)} tracepoints present")

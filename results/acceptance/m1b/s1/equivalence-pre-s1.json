@@ -1,0 +1,90 @@
+{
+  "attached_tracepoints": 10,
+  "count_deltas": {
+    "clone": 20,
+    "clone3": 0,
+    "execve": 50,
+    "execveat": 0,
+    "fork": 0,
+    "open": 10,
+    "openat": 1000,
+    "openat2": 0,
+    "vfork": 0
+  },
+  "exit": {
+    "final_counts_kept": true,
+    "reclaimed_delta_ge_1": true,
+    "reclaimed_next_snapshot": true,
+    "reported_exited": true
+  },
+  "helper_exit_rc": 0,
+  "identity": {
+    "attribution": "host",
+    "comm": "sysc_helper",
+    "container_pid": null,
+    "exited": false,
+    "level_is_distro": true,
+    "pidns_is_own": true,
+    "start_ticks_match_proc": true,
+    "tgid_is_helper_pid": true
+  },
+  "map_full": {
+    "counts_map_full_ge_1": true,
+    "entries_le_4": true
+  },
+  "self_exclusion": {
+    "delta_ge_10": true,
+    "own_pid_absent": true
+  },
+  "unresolved": {
+    "delta_ge_100": true,
+    "nothing_attributed": true
+  },
+  "v1_shape": {
+    "health_keys": [
+      "counts_map_full",
+      "exit_events",
+      "info_map_full",
+      "map_capacity",
+      "map_entries",
+      "reclaimed",
+      "self_excluded_events",
+      "snapshot_ns",
+      "unresolved_events"
+    ],
+    "probe": [
+      "execve",
+      "execveat",
+      "open",
+      "openat",
+      "openat2",
+      "clone",
+      "clone3",
+      "fork",
+      "vfork"
+    ],
+    "proc_keys": [
+      "comm",
+      "container",
+      "container_pid",
+      "counts",
+      "exited",
+      "host_tgid",
+      "key",
+      "level"
+    ],
+    "schema_errors": [],
+    "snapshot_keys": [
+      "calibration",
+      "health",
+      "interval_ns",
+      "probe",
+      "procs",
+      "resource_seq",
+      "seq",
+      "t_mono_ns",
+      "type",
+      "v"
+    ]
+  }
+}

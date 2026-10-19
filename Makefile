@@ -21,9 +21,10 @@ $(TARGET): $(SRC) $(HDR)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-# Static so it runs unchanged inside a busybox container (DIT-1).
+# Static so it runs unchanged inside a busybox container (DIT-1); -pthread for
+# the thread commands used by the M1b S1 per-thread tests.
 $(HELPER): tests/helpers/sysc_helper.c | $(BUILD)
-	$(CC) $(CFLAGS) -O1 -static -o $@ $<
+	$(CC) $(CFLAGS) -O1 -static -pthread -o $@ $<
 
 helpers: $(HELPER)
 

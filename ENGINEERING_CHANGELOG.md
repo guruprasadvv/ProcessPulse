@@ -10,7 +10,7 @@ working tree but not yet in a commit.
 |---|---|---|
 | M0 | Accepted with documented defects | 2026-10-19 audit (below) |
 | M1 | **Accepted 2026-10-19** | M1 foundations + M1 acceptance (below); `results/acceptance/m1/` |
-| M1b | S0 implemented (uncommitted); S1–S7 not started | M1b S0 (below); `results/acceptance/m1b/s0/` |
+| M1b | S0 accepted (`d9b9e9b`); S1 implemented (uncommitted, under review); S2–S7 not started | M1b S0, S1 (below); `results/acceptance/m1b/` |
 | M2–M7 | Not started | — |
 
 ---
@@ -276,3 +276,54 @@ source or Makefile changed; no S1–S7 functionality.
   re-validated with the corrected validator (not re-run; the changed emitter
   paths, failures and uncommitted snapshots, did not occur in it): ok,
   0 keyframe schedule violations; its truncated copy is still rejected.
+
+## 2026-10-19 — M1b S0 accepted and committed
+
+- `d9b9e9b` feat(m1b): implement S0 telemetry v2 framing, validation, and snapshot
+  protocol — 28 files staged by explicit path; the 15 intentional M1 logs and
+  `results/raw/` excluded. Accepted limitations: the 10-minute v2 evidence
+  predates the keyframe correction (re-validated, not re-run); no end-to-end
+  `validate_run.py` test for keyframe schedule violations.
+
+## 2026-10-19 — M1b S1: unified, capability-flagged BPF collector (uncommitted)
+
+### Changes
+- `processpulse/vocab.py` (new): ordered syscall vocabulary with canonical JSON
+  serialisation and `id` = `v<version>-<sha256[:12]>`; current `v1-3aba869d1752`
+  (the M1 set, unchanged).
+- `bpf/common.h` (new): process key (M1 layout), `resolve()`, exclusion map,
+  per-thread slot map, health array (M1 indices 0–4 unchanged, 5–8 new).
+  `bpf/syscall_counter.bpf.c` is now the "counts" capability (map layouts
+  unchanged); `bpf/core.bpf.c` (new) holds the scheduler hooks and dispatches
+  to compiled-in capabilities.
+- `processpulse/bpf_collector.py` (new): `BpfCollector` — 2 compilations per start
+  (calibrate, unified), capability selection (`counts` only; `bigrams`, `priv`,
+  `net` reserved and refused), attached tracepoints checked against
+  `required_tracepoints()`, `build_info()`, `thread_slots()`, `thread_health()`.
+  `processpulse/syscalls.py` is now the M1 interface over it (`SyscallCollector`
+  = counts only). `processpulse/preflight.py` checks every attached tracepoint
+  (adds `sched/sched_process_exec`).
+- **F4:** per-thread slots created on attributed events, deleted at every thread
+  exit and for the old TID on non-leader exec; stale-TID detection; purged with
+  self-exclusion. Counters via `thread_health()` (not in v1/v2 records).
+- **F9:** `comm` and `cgroup_id` captured at entry creation and refreshed at
+  `sched_process_exec` instead of on every event; not refreshed by
+  `prctl(PR_SET_NAME)` or a cgroup move without exec (documented, tested).
+  `last_ktime` is still per event.
+- `tests/helpers/sysc_helper.c`: `tspawn`, `tjoin`, `exec`, `texec`, `rename`
+  commands (M1 commands unchanged); `Makefile` builds it with `-pthread`.
+- `tools/acceptance/s1_equivalence.py` (new); docs `docs/bpf-collector.md` (new),
+  `CLAUDE.md` §1.
+
+### Validation
+- Pre-S1 baseline captured on the S0 code before any S1 edit
+  (`results/acceptance/m1b/s1/equivalence-pre-s1.json`).
+- `make test` → 245 passed, 1 skipped (D8); py3.12 venv → 245 passed, 1 skipped;
+  74 C checks, 0 failures; `make check` rc 0.
+- As root `make test-privileged` → 42 passed, 0 leftover containers.
+- Equivalence post-S1: 33 of 34 fields identical; `attached_tracepoints` 10 → 11
+  (added `sched_process_exec`).
+- First privileged run of the new S1 tests: 2 failed because the tests compared
+  slot TIDs (host-namespace map keys) with distro PIDs; fixed by recording the
+  distro TID in the slot (informational) and comparing that → 8 passed.
+- Not run: `--abba`, overhead matrix, 10-minute run, DIT-1 ×3, 10× exact counts.
