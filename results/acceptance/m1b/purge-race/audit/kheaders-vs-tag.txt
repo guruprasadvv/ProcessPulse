@@ -1,0 +1,31 @@
+kheaders files under include/: 6500
+include/*.h in kheaders: identical=283 different=6208 not-in-tag-tree=9
+== different (first 20):
+include/acpi/acbuffer.h
+include/acpi/acconfig.h
+include/acpi/acexcep.h
+include/acpi/acnames.h
+include/acpi/acoutput.h
+include/acpi/acpi.h
+include/acpi/acpi_bus.h
+include/acpi/acpi_drivers.h
+include/acpi/acpi_lpat.h
+include/acpi/acpi_numa.h
+include/acpi/acpiosxf.h
+include/acpi/acpixf.h
+include/acpi/acrestyp.h
+include/acpi/actbl.h
+include/acpi/actbl1.h
+include/acpi/actbl2.h
+include/acpi/actbl3.h
+include/acpi/actypes.h
+include/acpi/acuuid.h
+include/acpi/apei.h
+== key files
+DIFFERENT include/linux/tracepoint.h
+DIFFERENT include/trace/perf.h
+DIFFERENT include/linux/bpf.h
+DIFFERENT include/linux/rcupdate.h
+DIFFERENT include/trace/trace_events.h
+DIFFERENT include/uapi/linux/membarrier.h
+DIFFERENT include/linux/trace_events.h

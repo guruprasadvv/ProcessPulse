@@ -1,0 +1,46 @@
+== date
+2026-10-19T10:25:29+00:00
+== uname -a
+Linux LAPTOP-3K0VAD9R 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 GNU/Linux
+== /proc/version
+Linux version 6.18.33.2-microsoft-standard-WSL2 (root@f1bbfb02316b) (gcc (GCC) 13.2.0, GNU ld (GNU Binutils) 2.41) #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026
+== /proc/cmdline
+initrd=\initrd.img WSL_ROOT_INIT=1 panic=-1 nr_cpus=16 hv_utils.timesync_implicit=1 console=hvc0 debug pty.legacy_count=0 WSL_ENABLE_CRASH_DUMP=1
+== config (selected)
+CONFIG_LOCALVERSION="-microsoft-standard-WSL2"
+# CONFIG_LOCALVERSION_AUTO is not set
+CONFIG_NO_HZ_IDLE=y
+# CONFIG_NO_HZ_FULL is not set
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+CONFIG_BPF_JIT_ALWAYS_ON=y
+CONFIG_PREEMPT_BUILD=y
+CONFIG_PREEMPT_NONE=y
+# CONFIG_PREEMPT_VOLUNTARY is not set
+# CONFIG_PREEMPT is not set
+CONFIG_PREEMPT_DYNAMIC=y
+CONFIG_TREE_RCU=y
+CONFIG_PREEMPT_RCU=y
+# CONFIG_RCU_EXPERT is not set
+CONFIG_TASKS_RCU=y
+CONFIG_TASKS_TRACE_RCU=y
+CONFIG_IKCONFIG=y
+CONFIG_IKHEADERS=m
+CONFIG_MEMBARRIER=y
+CONFIG_PERF_EVENTS=y
+CONFIG_TRACEPOINTS=y
+CONFIG_SMP=y
+CONFIG_NR_CPUS=8192
+CONFIG_HAVE_SYSCALL_TRACEPOINTS=y
+CONFIG_FTRACE_SYSCALLS=y
+CONFIG_BPF_EVENTS=y
+== config sha256 (decompressed /proc/config.gz)
+11d9efe4a3a081ca548551f91091bd0b18c35ad391650b85eacc3d48230f94d9  -
+== preempt mode (sysfs/debugfs if present)
+(debugfs sched/preempt not readable)
+== nohz_full
+(absent)
+== cpus
+possible=0-15 online=0-15
+== kheaders
+(kheaders not loaded)

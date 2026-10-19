@@ -249,6 +249,71 @@ def test_read_bigrams_needs_the_capability():
         c.read_bigrams()
 
 
+# --- exclusion purge: barrier ordering (S2.3 audit, finding 2) ---------------------
+
+class LoggingTable(FakeTable):
+    def __init__(self, name, log, items=()):
+        super().__init__(list(items))
+        self.name, self.log = name, log
+
+    def items(self):
+        self.log.append(("read", self.name))
+        return super().items()
+
+    def __setitem__(self, k, v):
+        self.log.append(("set", self.name))
+
+    def __delitem__(self, k):
+        self.log.append(("delete", self.name))
+
+
+@pytest.mark.parametrize("caps", [("counts",), ("counts", "bigrams")])
+def test_exclude_sets_the_flag_then_waits_then_purges(monkeypatch, caps):
+    log = []
+    monkeypatch.setattr(bc, "rcu_barrier", lambda: log.append(("barrier", None)))
+    c = bc.BpfCollector(capabilities=caps)
+    cv = SimpleNamespace(c=[1] + [0] * (len(SYSCALLS) - 1), pairs_lost=0)
+    c.b = {"excluded": LoggingTable("excluded", log),
+           "counts": LoggingTable("counts", log, [(ckey(1, 10), cv)]),
+           "info": LoggingTable("info", log),
+           "threads": LoggingTable("threads", log,
+                                   [(5, SimpleNamespace(proc=SimpleNamespace(tgid=10)))]),
+           "bigrams": LoggingTable("bigrams", log, [(bkey(1, 10, 9, 0), val(1))])}
+    c.exclude(10)
+    assert log[0] == ("set", "excluded") and log[1] == ("barrier", None)
+    assert log.count(("barrier", None)) == 1
+    touched = {name for op, name in log[2:]}
+    assert {"counts", "info", "threads"} <= touched
+    assert ("bigrams" in touched) == ("bigrams" in caps)
+
+
+def test_rcu_barrier_refuses_without_kernel_support():
+    with pytest.raises(RuntimeError, match="MEMBARRIER_CMD_GLOBAL"):
+        bc.rcu_barrier(_syscall=lambda nr, cmd, flags, cpu: 0)          # query: unsupported
+    with pytest.raises(RuntimeError, match="MEMBARRIER_CMD_GLOBAL"):
+        bc.rcu_barrier(_syscall=lambda nr, cmd, flags, cpu: -1)         # query failed
+    calls = []
+
+    def failing(nr, cmd, flags, cpu):
+        calls.append(cmd)
+        return 1 if cmd == 0 else -1
+    with pytest.raises(OSError):
+        bc.rcu_barrier(_syscall=failing)
+    assert calls == [0, 1]                                             # query, then GLOBAL
+    ok = []
+    bc.rcu_barrier(_syscall=lambda nr, cmd, flags, cpu: ok.append(cmd) or (1 if cmd == 0 else 0))
+    assert ok == [0, 1]
+
+
+def test_exit_hook_skips_excluded_processes_before_touching_their_entries():
+    with open(bc.BPF_DIR + "/core.bpf.c") as f:
+        text = f.read()
+    exit_hook = text[text.index("sched_process_exit"):text.index("sched_process_exec")]
+    gate = exit_hook.index("if (excluded.lookup(&k.tgid))")
+    assert gate < exit_hook.index("counts_on_exit(&k)")
+    assert exit_hook.index("thread_exit()") < gate          # deleting its own slot stays first
+
+
 def test_preflight_checks_every_attached_tracepoint(monkeypatch):
     from processpulse import preflight
     assert preflight.required_tracepoints is bc.required_tracepoints

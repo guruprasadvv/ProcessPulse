@@ -1,0 +1,4 @@
+﻿command (as root): python3 -W ignore tools/acceptance/s1_equivalence.py equivalence-after-fix.json, then a field-by-field comparison with results/acceptance/m1b/s1/equivalence-post-s1.json
+output (the comparison script was reused from S2.3, so its label says "S2.3" for the current, post-fix code):
+equivalence rc=0
+fields: S2.3 34, S1 baseline 34; identical 34; different 0

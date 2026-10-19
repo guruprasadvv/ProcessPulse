@@ -1,0 +1,24 @@
+method: kheaders (/sys/kernel/kheaders.tar.xz of the running kernel) vs tag linux-msft-wsl-6.18.33.2 include/*.h after gen_kheaders.sh comment stripping
+include/*.h in kheaders: identical=6491 different=0 not-in-tag-tree=9
+== different:
+== not in tag tree (generated at build time):
+  include/generated/asm-offsets.h
+  include/generated/autoconf.h
+  include/generated/bounds.h
+  include/generated/compile.h
+  include/generated/gcc-plugins.h
+  include/generated/rq-offsets.h
+  include/generated/timeconst.h
+  include/generated/uapi/linux/version.h
+  include/generated/utsrelease.h
+== key files
+IDENTICAL include/linux/tracepoint.h
+IDENTICAL include/trace/perf.h
+IDENTICAL include/linux/bpf.h
+IDENTICAL include/linux/rcupdate.h
+IDENTICAL include/trace/trace_events.h
+IDENTICAL include/uapi/linux/membarrier.h
+IDENTICAL include/linux/trace_events.h
+IDENTICAL include/linux/preempt.h
+IDENTICAL include/linux/rcupdate_trace.h
+IDENTICAL include/linux/cleanup.h

@@ -17,6 +17,10 @@ TRACEPOINT_PROBE(sched, sched_process_exit)
     if (resolve(&k, &level, &cpid) != 0)
         return 0;
     hinc(H_EXIT);
+    /* An excluded process's entries are purged by userspace (exclude()): never
+     * write to them, so no write can race the purge's deletes. */
+    if (excluded.lookup(&k.tgid))
+        return 0;
 #ifdef PPC_CAP_COUNTS
     counts_on_exit(&k);
 #endif

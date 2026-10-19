@@ -1,0 +1,19 @@
+trace_call_bpf: 1 symbol(s)
+perf_syscall_enter: 1 symbol(s)
+perf_call_bpf_enter: 1 symbol(s)
+perf_trace_run_bpf_submit: 1 symbol(s)
+perf_sysenter_enable: 0 symbol(s)
+__x64_sys_membarrier: 1 symbol(s)
+synchronize_rcu: 1 symbol(s)
+htab_map_delete_elem: 1 symbol(s)
+htab_map_update_elem: 1 symbol(s)
+pcpu_freelist_push: 1 symbol(s)
+__perf_event_set_bpf_prog: 1 symbol(s)
+perf_event_attach_bpf_prog: 1 symbol(s)
+== kheaders generated build strings
+#define UTS_RELEASE "6.18.33.2-microsoft-standard-WSL2"
+#define LINUX_COMPILE_BY	"root"
+#define LINUX_COMPILE_HOST	"f1bbfb02316b"
+#define LINUX_COMPILER		"gcc (GCC) 13.2.0, GNU ld (GNU Binutils) 2.41"
+== /proc/version
+Linux version 6.18.33.2-microsoft-standard-WSL2 (root@f1bbfb02316b) (gcc (GCC) 13.2.0, GNU ld (GNU Binutils) 2.41) #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026

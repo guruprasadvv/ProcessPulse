@@ -204,22 +204,69 @@ implemented (drain is a later S2 step).
   `pairs_lost` = 0.
 - `START_LOST` is assigned to every thread that started before the last
   slot-map-full event, including threads that lost nothing.
-- **OPEN — required fix before S2.5 (S2.3 audit, finding 2).** `exclude()`
-  sets the exclusion and immediately reads and deletes the process's counts,
-  pair entries and slots. A probe of that process that passed the exclusion
-  check just before can still be running and holding a pointer into one of
-  those entries. Consequences:
-  - purge totals off by one, so I-B2 fails loudly;
-  - an entry recreated after the delete, which stays live;
-  - inferred, not observed: elements of preallocated hash maps are reused
-    immediately after deletion, so a late increment could land on another
-    process's counter or another thread's `prev`. A wrong `prev` can be silent.
+- **Exclusion purge race (S2.3 audit, finding 2): fixed, see "Exclusion
+  purge" below.** The fix relies on a kernel RCU guarantee, which is argued
+  from kernel source, not inspected on this build; the race itself was never
+  reproduced.
 
-  It happens when an *active* process is excluded: the agent excludes the C
-  collector right after spawning it (`agent.py:121`). The counts part already
-  existed in S1. S2.4's tests exclude only idle helpers, so they are not
-  affected. Planned fix: after setting the exclusion, wait for in-flight
-  probes before reading and deleting, or use non-preallocated maps for these
-  entries.
+### Exclusion purge
+
+**The problem had two causes:**
+1. `exclude()` used to set the exclusion and immediately read and delete the
+   process's counts, info, pair entries and slots. A probe invocation that
+   passed the exclusion check just before could still be running. Its late
+   update could be lost from the purge totals, recreate an entry, or land in a
+   deleted element that a preallocated hash map had already reused for another
+   key: another process's counter or another thread's `prev`.
+2. The `sched_process_exit` hook wrote `info.exited` without checking the
+   exclusion at all, so even an exit that began after the exclusion could race
+   the purge. A deterministic test showed this before the fix: an info entry
+   of an excluded process got `exited = 1`.
+
+**The fix:**
+1. Every BPF path that writes an entry of a process now checks the exclusion
+   first: the syscall probes (S1), the exec hook (S1), and the exit hook
+   before `counts_on_exit` (new). The exit hook still deletes its own thread
+   slot first, but a delete holds no pointer afterwards.
+2. `exclude()` sets the exclusion, then calls `rcu_barrier()`, then reads and
+   deletes. `rcu_barrier()` is `membarrier(MEMBARRIER_CMD_GLOBAL)`, for which
+   the kernel runs `synchronize_rcu()`.
+
+**Why it is sufficient:**
+- BPF programs on these tracepoints (perf-attached by BCC) run inside
+  `trace_call_bpf()` under `rcu_read_lock()`, with preemption disabled.
+  `synchronize_rcu()` waits for every reader that began before it, including
+  preempt-disabled regions; `CONFIG_PREEMPT_RCU=y` here.
+- By the RCU grace-period guarantee, a reader that does not finish before the
+  barrier returns started after it began, so it sees the exclusion entry
+  published before the call and returns without writing.
+- So after the barrier, no program holds a pointer into an entry of that
+  process. The values read are final (purged counts = purged pairs + purged
+  `pairs_lost`, the per-entry identity) and no later write can reach a deleted
+  element.
+
+**Requirements and cost:**
+- Needs `MEMBARRIER_CMD_GLOBAL`: `query` reports it on this kernel, and there
+  is no `nohz_full`. If it is unavailable, `exclude()` raises instead of
+  purging unsafely, and `start()`, which excludes the agent itself, fails
+  early.
+- Measured (`results/acceptance/m1b/purge-race/barrier_timing.json`): the
+  barrier takes 8 ms median idle (max 16) and 16 ms median with two busy
+  helpers (max 28). `exclude()` takes 27–31 ms median (max 51).
+
+**Tests (`tests/test_exclusion_purge.py`):**
+- excluding an idle process, giving exact purge totals;
+- 10 exclusions of busy processes while another helper stays busy; the
+  purge stays balanced, no entry survives or reappears, and the other helper's
+  counts and pair table stay exact;
+- 20 exclusions right after `Popen`, as the agent does;
+- the exit-hook gate, deterministically;
+- a counts-only build with busy exclusions.
+
+The busy-process tests passed before the fix as well: the in-flight window is
+microseconds, and the old purge read milliseconds after setting the flag. They
+are exact regression checks; the barrier's guarantee rests on the RCU argument
+above and on `test_exclude_sets_the_flag_then_waits_then_purges`, which
+requires the barrier before any read or delete.
 - Map reads are not atomic; exact checks require an idle process. The drained
   final snapshot (U3, H-DRAIN) is not implemented yet.

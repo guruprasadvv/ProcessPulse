@@ -10,7 +10,7 @@ working tree but not yet in a commit.
 |---|---|---|
 | M0 | Accepted with documented defects | 2026-10-19 audit (below) |
 | M1 | **Accepted 2026-10-19** | M1 foundations + M1 acceptance (below); `results/acceptance/m1/` |
-| M1b | S0 accepted (`d9b9e9b`); S1 committed (`391c988`); S2.1–S2.4 implemented (uncommitted, under review); S2.5+ and S3–S7 not started (purge-race fix required first) | M1b S0, S1, S2.1–S2.3 (below); `results/acceptance/m1b/` |
+| M1b | S0 accepted (`d9b9e9b`); S1 committed (`391c988`); S2.1–S2.4 and the purge-race fix implemented (uncommitted, under review); S2.5+ and S3–S7 not started | M1b S0, S1, S2.1–S2.3 (below); `results/acceptance/m1b/` |
 | M2–M7 | Not started | — |
 
 ---
@@ -534,3 +534,50 @@ Step 2 of the S2 sequence. No BPF, emitter, agent or kernel change.
   - root `pytest tests/ -m privileged` → 75 passed; `bpf_stats_enabled` 0;
     no cgroups or containers left.
 - Not run: `--abba`, overhead, drain, emitter, whole-epoch I-B2 (S2.5/S2.6).
+
+## 2026-10-19 — Exclusion-purge race fixed (S2.3 audit, finding 2; before S2.5; uncommitted)
+
+### Root cause
+1. `BpfCollector.exclude()` read and deleted the process's entries right
+   after setting the exclusion, with no guarantee that probe invocations
+   which had already passed the check had finished. Their late updates could
+   be lost from the purge totals, recreate an entry, or land in a deleted
+   element that a preallocated hash map had already reused for another key.
+2. The `sched_process_exit` hook wrote `info.exited` without checking the
+   exclusion, so it could race the purge even when it began afterwards.
+   Shown deterministically before the fix: an excluded process's info entry
+   got `exited = 1`.
+
+### Fix
+- `bpf/core.bpf.c`: the exit hook checks the exclusion before
+  `counts_on_exit`, after deleting its own thread slot. Every BPF writer of a
+  process's entries now checks the exclusion first.
+- `processpulse/bpf_collector.py`: `rcu_barrier()`
+  (`membarrier(MEMBARRIER_CMD_GLOBAL)`, for which the kernel runs
+  `synchronize_rcu()`; raises if unsupported). `exclude()` now sets the
+  exclusion, calls `rcu_barrier()`, then reads and deletes.
+- Basis: programs on these tracepoints run in `trace_call_bpf()` under
+  `rcu_read_lock()` with preemption disabled. This is kernel-source
+  reasoning, not inspected on this build; `CONFIG_PREEMPT_RCU=y`, and the
+  query mask includes the command.
+
+### Tests
+- `tests/test_bpf_collector_unit.py`: exclusion then barrier then purge
+  (counts-only and bigrams builds); barrier failure handling; the exit-hook
+  gate's position in the source.
+- `tests/test_exclusion_purge.py` (new, 5 privileged): an idle exclusion with
+  exact purge totals; 10 exclusions of busy helpers while another stays exact;
+  20 exclusions right after `Popen`, as the agent does; the exit-hook gate
+  (failed before the fix, passes after); a counts-only build with busy
+  exclusions.
+- The busy-exclusion tests also passed on the unfixed code, so the race was
+  not reproducible there; they are regression checks.
+
+### Validation (`results/acceptance/m1b/purge-race/`)
+- Purge tests: 5 passed twice (194.55 s, then 49.06 s; the difference is host
+  load, the barrier costs 8–28 ms).
+- Root `pytest tests/ -m privileged`: 80 passed; `bpf_stats_enabled` 0; no
+  cgroups or containers left.
+- Counts-only equivalence: 34 of 34 fields identical to S1.
+- `make test` (py3.14): 74 C checks, 0 failures; 525 passed, 1 skipped.
+  py3.12 `make test-py`: 525 passed, 1 skipped. `make check` rc 0.

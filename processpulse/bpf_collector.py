@@ -75,6 +75,37 @@ SOURCE_ORDER = ("bigrams", "counts")                   # the counter calls the b
 RESERVED_CAPABILITIES = ("priv", "net")                # later M1b stages
 
 SYS_GETPID = {"x86_64": 39, "aarch64": 172}
+SYS_MEMBARRIER = {"x86_64": 324, "aarch64": 283}
+MEMBARRIER_CMD_QUERY = 0
+MEMBARRIER_CMD_GLOBAL = 1          # the kernel runs synchronize_rcu()
+
+
+def rcu_barrier(_syscall=None):
+    """Waits for an RCU grace period: membarrier(MEMBARRIER_CMD_GLOBAL), which
+    makes the kernel run synchronize_rcu() (it returns at once on a single
+    online CPU, where no probe can be running while we are).
+
+    BPF programs on these tracepoints run inside trace_call_bpf(), under
+    rcu_read_lock() and with preemption disabled. When this returns, every
+    probe invocation that started before the call has finished, and every
+    later one sees map updates made before the call. Raises if the kernel
+    lacks the command (e.g. nohz_full), rather than purging without the
+    guarantee. _syscall is a test seam."""
+    if _syscall is None:
+        nr = SYS_MEMBARRIER.get(platform.machine())
+        if nr is None:
+            raise RuntimeError(f"unsupported architecture {platform.machine()}")
+        libc = ctypes.CDLL(None, use_errno=True)
+
+        def _syscall(_nr, cmd, flags, cpu):
+            return libc.syscall(nr, cmd, flags, cpu)
+    supported = _syscall(None, MEMBARRIER_CMD_QUERY, 0, 0)
+    if supported < 0 or not supported & MEMBARRIER_CMD_GLOBAL:
+        raise RuntimeError("membarrier MEMBARRIER_CMD_GLOBAL is not available: the exclusion "
+                           "purge cannot wait for in-flight probes")
+    if _syscall(None, MEMBARRIER_CMD_GLOBAL, 0, 0) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, f"membarrier(MEMBARRIER_CMD_GLOBAL) failed: {os.strerror(err)}")
 
 
 class CalibrationError(RuntimeError):
@@ -281,10 +312,18 @@ class BpfCollector:
         spawned collector), including its thread slots. Purged events stay
         visible in self_excluded_events. With bigrams its pair entries are
         purged too and added to the purge totals (purged_counts, purged_pairs,
-        purged_pairs_lost); the exclusion is set first, so the entries are read
-        after it took effect (P-PURGE; a probe already past the exclusion
-        check can still be in flight)."""
+        purged_pairs_lost).
+
+        Order (P-PURGE): (1) set the exclusion; (2) rcu_barrier(): probe
+        invocations that missed the exclusion have finished, and later ones
+        return before writing any entry of tgid (the syscall probes and the
+        exec and exit hooks all check it first); (3) read and delete. The values
+        read are final, and no BPF program holds a pointer into an entry being
+        deleted, so a late update can neither be lost from the purge totals nor
+        land in a deleted element that a preallocated map has already reused
+        for another key."""
         self.b["excluded"][ctypes.c_uint(tgid)] = ctypes.c_ubyte(1)
+        rcu_barrier()
         counts_t, info_t, threads_t = self.b["counts"], self.b["info"], self.b["threads"]
         for k, v in list(counts_t.items()):
             if k.tgid == tgid:

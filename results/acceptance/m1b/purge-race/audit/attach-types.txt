@@ -1,0 +1,4 @@
+tracepoints attached: 11
+new fds by type: {'anon_inode:btf': 1, 'anon_inode:bpf-map': 7, 'anon_inode:bpf-prog': 11, 'anon_inode:[perf_event]': 11}
+bpf programs by type: {'BPF_PROG_TYPE_TRACEPOINT': 11}
+bpf links by type: none

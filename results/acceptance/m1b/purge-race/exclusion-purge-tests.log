@@ -1,0 +1,23 @@
+date: 2026-10-19T09:49:17+00:00
+bpf_stats_enabled before: 0
+ppc cgroups before: 0
+containers before: 0
+command: PYTHONUSERBASE=/home/mypc/.local python3 -m pytest -p no:cacheprovider tests/test_exclusion_purge.py -v -m privileged -W ignore::DeprecationWarning
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 5 items
+
+tests/test_exclusion_purge.py::test_exclude_an_idle_process PASSED       [ 20%]
+tests/test_exclusion_purge.py::test_exclude_busy_processes_while_another_stays_exact PASSED [ 40%]
+tests/test_exclusion_purge.py::test_exclude_immediately_after_spawn_like_the_agent PASSED [ 60%]
+tests/test_exclusion_purge.py::test_exit_hook_does_not_touch_an_excluded_process PASSED [ 80%]
+tests/test_exclusion_purge.py::test_counts_only_build_purges_a_busy_process_exactly PASSED [100%]
+
+======================== 5 passed in 194.55s (0:03:14) =========================
+pytest rc=0
+bpf_stats_enabled after: 0
+ppc cgroups after: 0
+containers after: 0
