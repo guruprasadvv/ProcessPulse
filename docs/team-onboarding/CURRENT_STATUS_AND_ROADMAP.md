@@ -13,7 +13,7 @@ GitHub (private): https://github.com/guruprasadvv/ProcessPulse.
 | Branch | Contents | Status |
 |---|---|---|
 | `master` | M0 → S2.6, the onboarding package, the S3 network plan, `docs/commit-hash-map.md` | committed; **the only branch the owner merges into** |
-| `wip/s3.2-network` (`5b6231b`) | `master` as of the S3.2 push, plus the S3.1/S3.2 code and its evidence (see §3) | **not merged, not accepted** |
+| `wip/s3.2-network` | `master`, plus the S3.1/S3.2 code and its evidence in commit `5b6231b` (see §3) | **not merged, not accepted** |
 
 - **History rewrite:** on 2026-10-19 the history was rewritten once, to
   remove an AI co-author line from the commit messages. Files, authors and
@@ -55,7 +55,7 @@ the final M1b acceptance (S7 in the old plan) are still open.
 
 ## 3. Implemented but not accepted: S3.1/S3.2 (network: connect/accept)
 
-**Where:** branch `wip/s3.2-network` (`5b6231b`). The evidence paths below
+**Where:** branch `wip/s3.2-network`, commit `5b6231b`. The evidence paths below
 exist only on that branch.
 
 **Status: NOT READY FOR REVIEW.** Verification checklist on the **final**
