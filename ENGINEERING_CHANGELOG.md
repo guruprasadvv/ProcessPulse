@@ -674,3 +674,107 @@ H-DRAIN); design §3.6 (`drain()` in the collector), §4 test matrix row
   barrier), so whether the barrier was necessary in these runs is not
   demonstrated; the second read's detection was shown on attached probes
   only.
+
+## 2026-10-19 — S2.1–S2.5 committed in three commits; M1b S2.6: bigram emitter and agent integration (S2.6 uncommitted)
+
+### Commits (authorized, option 1)
+- `5f0d376` feat(m1b): implement S2.1-S2.4 bounded syscall bigram storage and map accounting
+- `1f763de` fix(m1b): synchronize in-flight BPF readers before purge
+- `d1d7eac` feat(m1b): implement S2.5 final-drain protocol and double-read map accounting
+
+How the states were split:
+- **Commit 1 (S2.1–S2.4):** the purge-fix edits, taken verbatim from the
+  session transcript, were reversed out of the pre-S2.5 file copies.
+- **Commit 2 (purge fix):** the pre-S2.5 copies.
+- **Commit 3 (S2.5):** the working tree.
+- Each state was staged as blobs (`git update-index`), so the working tree
+  was not touched.
+
+Verification before committing:
+- Each staged index equalled a full tree that had passed `make test`: state
+  A 519 passed / 3 skipped, state B 523 / 3. The two extra skips read
+  gitignored `results/raw/`.
+- State B also passed the privileged purge and bigram tests: 24 passed.
+- Commit 3's changes are line-identical to the reviewed
+  `s2.5-changes.patch` (1,209 / 1,209).
+- `git diff --cached --check` findings were only blank context lines inside
+  that patch file, which unified diff format requires.
+
+Evidence: `results/acceptance/m1b/s2.6/phase1/`.
+
+### S2.6 changes
+- `processpulse/snapshots.py` `V2Emitter(bigrams=None|"ok"|"unavailable",
+  bigrams_reason, max_pairs_per_record)`:
+  - **tables:** the collector's `last_bigrams` (same `snapshot()` read as the
+    counts) and `bigram_health()`, read before `take_removed()`. A read
+    failure, or a reported process without a table, gives a `failed`
+    snapshot that changes nothing and keeps removals;
+  - **change detection:** a process is re-emitted, with its full table, on
+    any payload change (counts, `pairs_lost`) or a pair-table change
+    (S2.3 audit finding 4);
+  - **order:** procs, `bigram_parts`, reclaimed, end;
+  - **end record:** `bigram_records`, `totals.bigrams`, `bigram_health`,
+    and `drained` = the collector's `last_snapshot_drained` and status ok;
+  - **unavailable:** `pairs_lost` null + `bigrams_err` UNSUPPORTED, no
+    tables, null totals and health. Without selection the S0 records are
+    unchanged.
+- `processpulse/agent.py`:
+  - `--capabilities` / `Agent(capabilities=)`: bigrams require schema 2 and
+    counts; `priv`/`net` are refused; the defaults stay schema 1 / counts;
+  - `_start_bpf()`: a collector whose start fails is closed, and a failing
+    close() is recorded and attached to the original exception as a note.
+    Strict policy (review refinement): if bigrams were requested and their
+    program (or preflight) fails, the run fails. Nothing else is started and
+    no telemetry is written; the manifest says `status: failed` with the
+    exact reason; `StartupError` is chained to the original error, and the
+    CLI exits 1. Only `--allow-degraded` runs counts-only with bigrams
+    `unavailable`, recording requested/active/failed capabilities.
+    `--no-bpf` with bigrams is refused;
+  - `_final_drain()` at the normal end of a bigram run: stop the resource
+    supervisor and require its thread to have ended, then `drain()`, then
+    exactly one snapshot after a successful drain (`resource_seq` null);
+  - manifest `capabilities`, `bigrams`, `drain`. Errors during collection
+    end the run without a drain; both collectors are always stopped and
+    closed.
+- `processpulse/resource.py`: `ResourceCollector.stopped`.
+- `tools/acceptance/validate_run.py`:
+  - a `resource_seq`-null final snapshot is allowed only last;
+  - `snapshots_after_drain` is a protocol failure;
+  - bigram runs get `check_ib2_drained` + `check_quiescent_reports` (any
+    FAIL fails the run), and `--require-drained`.
+- Docs: `docs/telemetry-v2.md` §8.7 (new) and status lines;
+  `docs/bpf-collector.md`.
+
+### Tests
+- `tests/test_bigram_emitter.py` (20, unprivileged).
+- `tests/test_agent_bigrams.py` (29, unprivileged, fake C and BPF
+  collectors): strict failure, exit status, chained cause, cleanup error
+  notes, preflight failure, degraded mode end to end, and failures inside
+  the drained snapshot (write error, interrupt, unfittable part).
+- `tests/test_bigram_chunk_limits.py` (13, unprivileged):
+  - exhaustive limit sweep with exact-boundary and maximal-split checks;
+  - the 1,024/1,025 boundary;
+  - the widest possible part, 62,739 bytes, which fits even with its LF;
+  - Unicode and escape overhead measured on the final bytes;
+  - unfittable pairs refused.
+- `tests/test_agent_bigrams_bpf.py` (4, privileged, the real agent):
+  - the drained, balanced end-to-end run;
+  - a counts-only v2 run;
+  - a strict and a degraded startup failure after the program was loaded
+    and attached, both returning perf_event, bpf-prog and bpf-map fds to
+    their baseline.
+- `tests/snapshot_fakes.py`: `BigramCollectorFake`.
+
+### Validation (`results/acceptance/m1b/s2.6/`)
+- `make test` (py3.14): 74 C checks, 0 failures; 613 passed, 1 skipped.
+  py3.12 `make test-py`: 613 passed, 1 skipped. `make check` rc 0.
+- Root `make test-privileged`: 91 passed; `bpf_stats_enabled` 0; no cgroups
+  or containers.
+- CLI runs, each with `validate_run.py` rc 0:
+  - **30 s bigram run** (`--require-drained`): 1,247 bpf lines, max 1,372
+    bytes; drained final snapshot; I-B2 PASS (7,200 = 7,200);
+    I-B5/I-B1′/I-B3′/I-B1 PASS on 437 keys (3 live after the drain, 434
+    reclaimed as exited);
+  - 10 s counts-only v2 run;
+  - 10 s default schema-1 run.
+- Counts-only S1 equivalence: 34 of 34.

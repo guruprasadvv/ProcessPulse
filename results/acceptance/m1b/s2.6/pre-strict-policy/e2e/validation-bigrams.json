@@ -1,0 +1,186 @@
+{
+  "run_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/s2.6-bigrams-20261019T132252",
+  "mode": "v2",
+  "files": {
+    "resource.jsonl": {
+      "lines": 2109,
+      "valid": 2109,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 1167027,
+      "max_line_bytes": 612,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "4da7f1b2d3b485f63a230074a49e63e3cc951530bdf8a8884b5fdfc46e9ad0ed"
+    },
+    "bpf.jsonl": {
+      "lines": 904,
+      "valid": 904,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 417272,
+      "max_line_bytes": 1146,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "78f849b3a494b5fe7a1a020ea34a3b4cfb296611df57591a66434861d1253e5d"
+    },
+    "health.jsonl": {
+      "lines": 61,
+      "valid": 61,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 22522,
+      "max_line_bytes": 369,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "c32020007e7a05e7806496c6e2c1df051acf9fa610d9a067415eb005f1ed6e4c"
+    }
+  },
+  "errors": [],
+  "checks": {
+    "line_limits": {
+      "ok": true,
+      "policy": "v2: every line within the byte rule"
+    },
+    "resource_framing": {
+      "ok": true,
+      "samples": 61,
+      "problems": []
+    },
+    "final_snapshot": {
+      "ok": true,
+      "final_snapshot": {
+        "seq": 61,
+        "status": "ok",
+        "drained": true
+      },
+      "policy": "resource_seq null only on the last snapshot (the drained snapshot)"
+    },
+    "snapshot_protocol": {
+      "ok": true,
+      "stats": {
+        "snapshots_complete": 62,
+        "snapshots_failed": 0,
+        "snapshots_incomplete": 0,
+        "keyframes": 2,
+        "framing_errors": 0,
+        "seq_gaps": 0,
+        "epoch_changes": 0,
+        "totals_mismatch": 0,
+        "invalidations": 0,
+        "keyframe_schedule_violations": 0,
+        "snapshots_after_drain": 0
+      },
+      "final_state_valid": true,
+      "tracked_at_end": 2,
+      "problems": []
+    },
+    "bigram_invariants": {
+      "ok": true,
+      "drained_final_snapshot": true,
+      "require_drained": true,
+      "ib2": {
+        "status": "PASS",
+        "reason": "",
+        "detail": {
+          "counts": 6295,
+          "purged_counts": 6,
+          "pairs": 6295,
+          "pairs_lost": 0,
+          "purged_pairs": 4,
+          "purged_pairs_lost": 2,
+          "keys_live": 2,
+          "keys_reclaimed_exited": 293,
+          "lhs": 6301,
+          "rhs": 6301
+        }
+      },
+      "summary": {
+        "I-B2": {
+          "PASS": 1,
+          "FAIL": 0,
+          "NOT_APPLICABLE": 0
+        },
+        "I-B5": {
+          "PASS": 295,
+          "FAIL": 0,
+          "NOT_APPLICABLE": 0
+        },
+        "I-B1'": {
+          "PASS": 295,
+          "FAIL": 0,
+          "NOT_APPLICABLE": 0
+        },
+        "I-B3'": {
+          "PASS": 295,
+          "FAIL": 0,
+          "NOT_APPLICABLE": 0
+        },
+        "I-B1": {
+          "PASS": 295,
+          "FAIL": 0,
+          "NOT_APPLICABLE": 0
+        }
+      },
+      "not_applicable_reasons": [],
+      "failures": [],
+      "epoch_losses": {
+        "counts_map_full": 0,
+        "thread_map_full": 0,
+        "bigram_map_full": 0,
+        "pre_arm_events": 2
+      }
+    },
+    "alignment": {
+      "ok": true,
+      "samples": 61,
+      "snapshots": 61,
+      "health": 61
+    },
+    "span": {
+      "ok": true,
+      "span_s": 30.006,
+      "required_s": 25.0
+    },
+    "collector_stream_clean": {
+      "ok": true,
+      "nonzero": {}
+    },
+    "schema": {
+      "ok": true
+    }
+  },
+  "line_limits": {
+    "max_record_bytes": 65536,
+    "legacy_v1_oversize": 0,
+    "legacy_v1_cr": 0,
+    "max_line_bytes": 1146
+  },
+  "loss_counters": {
+    "resource_dropped_samples": 0,
+    "resource_restarts": 0,
+    "proc_gone_total": 4,
+    "proc_denied_total": 0,
+    "proc_parse_errors_total": 0,
+    "proc_read_errors_total": 0,
+    "max_late_ms": 0.902,
+    "max_sample_dur_ms": 9.812,
+    "bpf_failed_snapshots": 0,
+    "bpf_counts_map_full": 0,
+    "bpf_info_map_full": 0,
+    "bpf_vanished_entries": 0,
+    "bpf_unresolved_events": 292,
+    "bpf_self_excluded_events": 10060,
+    "bpf_exit_events": 295,
+    "bpf_reclaimed": 293,
+    "bpf_map_entries": 2,
+    "bpf_max_unreported_entries": 0,
+    "bpf_max_snapshot_ms": 44.285
+  },
+  "totals": {
+    "lines": 3074,
+    "valid": 3074,
+    "invalid": 0
+  },
+  "ok": true
+}

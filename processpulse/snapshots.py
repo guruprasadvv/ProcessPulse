@@ -33,7 +33,10 @@ bpf_proc is followed (after all procs, before any bpf_reclaimed) by the
 bpf_bigrams parts 0..parts-1 of its complete pair table, which replace the
 consumer's table. A missing, reordered, duplicated or orphaned part rejects
 the whole snapshot. bigram_parts() is the chunking rule (<= 1,024 pairs and
-the byte rule per record); the producer that emits them is a later S2 step.
+the byte rule per record). V2Emitter(bigrams="ok") is the producer (S2.6): a
+process is re-emitted, with its table, when its counts, pairs_lost or pair
+table changed; the end record's drained is true only for the snapshot the
+collector took as its drained snapshot (last_snapshot_drained).
 """
 
 import json
@@ -186,17 +189,34 @@ def _bigram_tables(b, procs, bigr, end):
 
 
 class V2Emitter:
+    """bigrams (S2.6): None = not selected (the S0 records, unchanged); "ok" = the
+    collector's bigrams capability (BpfCollector with has_bigrams); "unavailable"
+    = selected but not loaded for this epoch (bigrams_reason says why): every
+    bpf_proc carries pairs_lost null and bigrams_err UNSUPPORTED, and no table,
+    bigram totals or health is emitted (never zeros)."""
+
     def __init__(self, collector, run_id, keyframe_interval=KEYFRAME_INTERVAL,
-                 limit=MAX_RECORD_BYTES, clock=time.monotonic_ns):
+                 limit=MAX_RECORD_BYTES, clock=time.monotonic_ns, bigrams=None,
+                 bigrams_reason=None, max_pairs_per_record=MAX_PAIRS_PER_RECORD):
         if getattr(collector, "track_removals", True) is not True:
             raise ValueError("V2Emitter needs a collector created with track_removals=True")
+        if bigrams not in (None, "ok", "unavailable"):
+            raise ValueError(f"bigrams must be None, 'ok' or 'unavailable', not {bigrams!r}")
+        if bigrams == "ok" and getattr(collector, "has_bigrams", False) is not True:
+            raise ValueError("bigrams='ok' needs a collector with the bigrams capability")
+        if bigrams == "unavailable" and not bigrams_reason:
+            raise ValueError("unavailable bigrams need a reason")
         self.c = collector
         self.run_id = run_id
         self.keyframe_interval = keyframe_interval
         self.limit = limit
         self.clock = clock
+        self.bigrams = bigrams
+        self.bigrams_reason = bigrams_reason if bigrams == "unavailable" else None
+        self.max_pairs = max_pairs_per_record
         self.seq = 0
         self.live = {}          # key tuple -> payload last emitted (and committed)
+        self.tables = {}        # bigrams ok: key tuple -> pair table last emitted (committed)
         self.vanished = 0       # cumulative vanished_entries (committed)
         self._prev_t = None
         self._attach = collector.attached_since   # the epoch this emitter serves
@@ -205,26 +225,56 @@ class V2Emitter:
 
     def _begin(self, seq, t0, interval, resource_seq, keyframe):
         c = self.c
-        return {
+        epoch = {"run_id": self.run_id, "attach_since_mono_ns": c.attached_since}
+        rec = {
             "type": "bpf_snapshot_begin", "v": V, "seq": seq, "t_mono_ns": t0,
             "interval_ns": interval, "resource_seq": resource_seq, "keyframe": keyframe,
             "calibration": {"boot_id": c.boot_id, "distro_level": c.distro_level,
                             "distro_pidns_ino": c.distro_pidns_ino},
             "capabilities": {CAPABILITY: {
                 "status": "ok",
-                "epoch": {"run_id": self.run_id, "attach_since_mono_ns": c.attached_since},
+                "epoch": epoch,
                 "probe": {"mode": "per_syscall_tracepoints", "syscalls": list(SYSCALLS)},
             }},
         }
+        if self.bigrams == "ok":
+            rec["capabilities"][BIGRAM_CAPABILITY] = {"status": "ok", "epoch": dict(epoch),
+                                                      "err": None, "reason": None}
+        elif self.bigrams == "unavailable":
+            rec["capabilities"][BIGRAM_CAPABILITY] = {"status": "unavailable", "epoch": None,
+                                                      "err": "UNSUPPORTED",
+                                                      "reason": self.bigrams_reason}
+        return rec
 
-    def _end(self, seq, status, reason, procs, reclaimed, nkeys, live, loss, health, read_err):
-        return {
+    def _end(self, seq, status, reason, procs, reclaimed, nkeys, live, loss, health, read_err,
+             tables=None, parts=0, bigram_health=None, drained=False):
+        rec = {
             "type": "bpf_snapshot_end", "v": V, "seq": seq, "t_mono_ns": self.clock(),
             "status": status, "reason": reason, "procs_emitted": procs,
             "reclaimed_records": reclaimed, "reclaimed_keys": nkeys, "tracked": len(live),
             "totals": {"counts": totals(live.values())},
             "loss": loss, "health": health, "read_err": read_err,
         }
+        if self.bigrams is not None:
+            ok = self.bigrams == "ok"
+            rec["totals"]["bigrams"] = bigram_totals(live.values(), tables.values()) if ok else None
+            rec["bigram_records"] = parts
+            rec["bigram_health"] = bigram_health if ok and status == "ok" else None
+            rec["drained"] = bool(drained) and status == "ok"
+        return rec
+
+    def _bigram_values(self):
+        """bigrams ok: {key tuple: (table, pairs_lost)} of the collector's last
+        snapshot() (BpfCollector.last_bigrams, keyed (start_ns, tgid))."""
+        c, bg = self.c, self.c.last_bigrams
+        if bg is None:
+            raise RuntimeError("the collector's snapshot carried no pair tables")
+        div = 1_000_000_000 // c.ticks                 # identity.start_ticks_from_ns
+        out = {}
+        for (start_ns, tgid), table in bg["tables"].items():
+            kt = (c.boot_id, c.distro_pidns_ino, tgid, start_ns // div)
+            out[kt] = (table, bg["pairs_lost"][(start_ns, tgid)])
+        return out
 
     def build(self, resource_seq=None):
         """Returns (records, commit). Write every record, then call commit()."""
@@ -241,21 +291,38 @@ class V2Emitter:
         self._prev_t = t0
         try:
             snap = self.c.snapshot(resource_seq=resource_seq)
+            values = bhealth = None
+            if self.bigrams == "ok":
+                values = self._bigram_values()
+                missing = [key_tuple(p["key"]) for p in snap["procs"]
+                           if key_tuple(p["key"]) not in values]
+                if missing:                   # every counts entry has a table (read_bigrams)
+                    raise RuntimeError(f"no pair table for {len(missing)} process(es)")
+                bhealth = self.c.bigram_health()
+            drained = getattr(self.c, "last_snapshot_drained", False) is True
             removed = self.c.take_removed()
         except Exception as e:   # map read failure: report it, change nothing
             if scheduled:
                 self._keyframe_due = True        # recover at the next successful snapshot
             reason = f"{type(e).__name__}: {e}"[:200]
             recs = [self._begin(seq, t0, interval, resource_seq, False),
-                    self._end(seq, "failed", reason, 0, 0, 0, self.live, None, None, "EIO")]
+                    self._end(seq, "failed", reason, 0, 0, 0, self.live, None, None, "EIO",
+                              tables=self.tables)]
 
             def commit_failed():
                 self._uncommitted = False
             return recs, commit_failed
 
-        procs = {}
+        procs, new_tables = {}, {}
         for p in snap["procs"]:
-            procs[key_tuple(p["key"])] = p
+            kt = key_tuple(p["key"])
+            if self.bigrams == "ok":
+                table, lost = values[kt]
+                p = dict(p, pairs_lost=lost, bigrams_err=None)
+                new_tables[kt] = table
+            elif self.bigrams == "unavailable":
+                p = dict(p, pairs_lost=None, bigrams_err="UNSUPPORTED")
+            procs[kt] = p
         removals, gone = [], set()
         for reason in ("exited", "self_excluded"):
             for kd in removed.get(reason, ()):
@@ -272,14 +339,27 @@ class V2Emitter:
 
         keyframe = scheduled or self._keyframe_due
         live = {kt: p for kt, p in self.live.items() if kt not in gone}
+        tables = {kt: t for kt, t in self.tables.items() if kt not in gone}
         emit = []
         for kt, p in procs.items():
-            if keyframe or self.live.get(kt) != p:
+            # A process is re-emitted when any field (counts, pairs_lost, ...) or its
+            # pair table changed: a probe counts first and records the pair second,
+            # so a pair can appear in a later read than its count (S2.3 audit, 4).
+            if keyframe or self.live.get(kt) != p or (
+                    self.bigrams == "ok" and self.tables.get(kt) != new_tables[kt]):
                 emit.append(p)
             live[kt] = p
+            if self.bigrams == "ok":
+                tables[kt] = new_tables[kt]
 
         recs = [self._begin(seq, t0, interval, resource_seq, keyframe)]
         recs += [{"type": "bpf_proc", "v": V, "seq": seq, **p} for p in emit]
+        parts = []
+        if self.bigrams == "ok":
+            for p in emit:
+                parts += bigram_parts(seq, p["key"], tables[key_tuple(p["key"])], self.limit,
+                                      self.max_pairs)
+        recs += parts
         chunks = []
         for reason in REMOVAL_REASONS:
             keys = [kd for r, kd in removals if r == reason]
@@ -296,10 +376,12 @@ class V2Emitter:
                                     "snapshot_ns")}
         health["unreported_entries"] = self.c.last_unreported
         recs.append(self._end(seq, "ok", None, len(emit), len(chunks), len(removals), live,
-                              loss, health, None))
+                              loss, health, None, tables=tables, parts=len(parts),
+                              bigram_health=bhealth, drained=drained))
 
         def commit():
             self.live = live
+            self.tables = tables
             self.vanished = vanished
             self._uncommitted = False
             if keyframe:

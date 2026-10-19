@@ -1,0 +1,20 @@
+before: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6205372
+cmd (as root): python3 -m processpulse.agent --out results/raw/s2.6-bigrams-20261019T140117 --duration 30 --interval-ms 500 --schema 2 --capabilities counts,bigrams
+{
+  "out": "results/raw/s2.6-bigrams-20261019T140117",
+  "counts": {
+    "samples": 61,
+    "snapshots": 62,
+    "failed_snapshots": 0
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  }
+}
+agent rc=0
+cmd: python3 tools/acceptance/validate_run.py results/raw/s2.6-bigrams-20261019T140117 --min-span-s 25 --require-drained --json results/acceptance/m1b/s2.6/e2e/validation-bigrams.json
+validate rc=0
+after: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6229372

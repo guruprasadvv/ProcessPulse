@@ -1,0 +1,18 @@
+git diff --stat (tracked S2.6 changes, base HEAD d1d7eac):
+ CLAUDE.md                        |  15 +--
+ ENGINEERING_CHANGELOG.md         | 104 +++++++++++++++++++
+ docs/bpf-collector.md            |  12 ++-
+ docs/telemetry-v2.md             | 109 ++++++++++++++++++--
+ processpulse/agent.py            | 215 ++++++++++++++++++++++++++++++++++++---
+ processpulse/resource.py         |   6 ++
+ processpulse/snapshots.py        | 106 ++++++++++++++++---
+ tests/snapshot_fakes.py          |  79 ++++++++++++++
+ tools/acceptance/validate_run.py |  46 ++++++++-
+ 9 files changed, 644 insertions(+), 48 deletions(-)
+
+new files:
+?? results/acceptance/m1b/s2.6/
+?? tests/test_agent_bigrams.py
+?? tests/test_agent_bigrams_bpf.py
+?? tests/test_bigram_chunk_limits.py
+?? tests/test_bigram_emitter.py

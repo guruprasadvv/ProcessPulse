@@ -19,6 +19,13 @@ Checks, without skipping anything:
   * v2 only: the snapshot protocol (processpulse.snapshots.Reconstructor): no
     incomplete snapshot, framing error, seq gap, epoch change, invalidation or
     tracked/totals mismatch, and a valid reconstructed state at the end;
+  * v2 only: a final snapshot after the last sample (resource_seq null: the
+    drained snapshot of a bigram run, S2.6) is allowed once, as the last
+    snapshot, and is not part of the per-sample alignment;
+  * v2 with bigrams: the emitted-stream invariants (processpulse.bigrams):
+    I-B2 on the drained snapshot and I-B5/I-B1'/I-B3'/I-B1 for every key whose
+    values are final. Any FAIL fails the run; NOT_APPLICABLE is reported with
+    its reason. --require-drained also requires a drained final snapshot;
   * collection span (first sample_begin -> last sample_end) >= --min-span-s;
   * the collector's own stream was clean: the agent filters invalid collector
     lines, so their counters (schema/framing/malformed/...) must all be 0.
@@ -34,6 +41,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from processpulse import bigrams as bg  # noqa: E402
 from processpulse.jsonl import MAX_RECORD_BYTES, line_violations  # noqa: E402
 from processpulse.snapshots import Reconstructor  # noqa: E402
 from processpulse.validate import Validator  # noqa: E402
@@ -90,11 +98,31 @@ def read_records(path, v, report):
     return records
 
 
+def bigram_report(rc, final, require_drained):
+    """Emitted-stream invariants of a bigram run (processpulse.bigrams)."""
+    ib2 = bg.check_ib2_drained(rc)
+    per_key = bg.check_quiescent_reports(rc)
+    summary = {}
+    for r in [ib2] + per_key:
+        s = summary.setdefault(r.invariant, {bg.PASS: 0, bg.FAIL: 0, bg.NOT_APPLICABLE: 0})
+        s[r.status] += 1
+    na_reasons = sorted({r.reason for r in per_key if r.status == bg.NOT_APPLICABLE})
+    fails = [f"{r.invariant} {r.key}: {r.reason}" for r in [ib2] + per_key if r.status == bg.FAIL]
+    drained = bool(final and final["drained"])
+    return {"ok": not fails and (drained or not require_drained),
+            "drained_final_snapshot": drained, "require_drained": require_drained,
+            "ib2": {"status": ib2.status, "reason": ib2.reason, "detail": ib2.detail},
+            "summary": summary, "not_applicable_reasons": na_reasons[:20], "failures": fails[:20],
+            "epoch_losses": bg.epoch_losses(rc)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
     ap.add_argument("--min-span-s", type=float, default=600.0)
     ap.add_argument("--json", default=None, help="write the report here")
+    ap.add_argument("--require-drained", action="store_true",
+                    help="v2 bigram run: the run must end with a drained snapshot")
     args = ap.parse_args()
 
     mode = "v2" if os.path.exists(os.path.join(args.run_dir, "bpf.jsonl")) else "v1"
@@ -152,18 +180,32 @@ def main():
         snap_seqs = [s["resource_seq"] for s in recs["syscall.jsonl"]]
     else:
         bpf = recs["bpf.jsonl"]
-        snap_seqs = [r["resource_seq"] for r in bpf if r["type"] == "bpf_snapshot_begin"]
+        begins = [r for r in bpf if r["type"] == "bpf_snapshot_begin"]
+        ends = [r for r in bpf if r["type"] == "bpf_snapshot_end"]
+        unaligned = [i for i, b in enumerate(begins) if b["resource_seq"] is None]
+        final = None
+        if unaligned:
+            last_end = ends[-1] if ends and ends[-1]["seq"] == begins[-1]["seq"] else None
+            final = {"seq": begins[-1]["seq"], "status": last_end and last_end["status"],
+                     "drained": bool(last_end and last_end.get("drained"))}
+        report["checks"]["final_snapshot"] = {
+            "ok": unaligned in ([], [len(begins) - 1]), "final_snapshot": final,
+            "policy": "resource_seq null only on the last snapshot (the drained snapshot)"}
+        snap_seqs = [b["resource_seq"] for b in begins if b["resource_seq"] is not None]
         rc = Reconstructor()
         for r in bpf:
             rc.feed(r)
         rc.finish()
         st = rc.stats
         bad = ("snapshots_incomplete", "framing_errors", "seq_gaps", "epoch_changes",
-               "totals_mismatch", "invalidations", "keyframe_schedule_violations")
+               "totals_mismatch", "invalidations", "keyframe_schedule_violations",
+               "snapshots_after_drain")
         report["checks"]["snapshot_protocol"] = {
             "ok": not any(st[k] for k in bad) and st["keyframes"] >= 1 and rc.valid,
             "stats": st, "final_state_valid": rc.valid, "tracked_at_end": len(rc.state),
             "problems": rc.errors[:20]}
+        if begins and "bigrams" in begins[0]["capabilities"]:
+            report["checks"]["bigram_invariants"] = bigram_report(rc, final, args.require_drained)
     health_seqs = [h["seq"] for h in recs["health.jsonl"]]
     report["checks"]["alignment"] = {"ok": snap_seqs == seqs and health_seqs == seqs,
                                      "samples": len(seqs), "snapshots": len(snap_seqs),

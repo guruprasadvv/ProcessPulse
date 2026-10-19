@@ -1,0 +1,4 @@
+FAILED tests/test_bigram_emitter.py::test_ib2_and_the_quiescent_checks_pass_on_an_emitted_drained_stream
+FAILED tests/test_bigram_emitter.py::test_ib2_on_the_emitted_stream_detects_a_missing_purge_term
+FAILED tests/test_bigram_emitter.py::test_ib2_is_not_applicable_without_a_drained_snapshot
+18 failed, 2 passed in 2.91s

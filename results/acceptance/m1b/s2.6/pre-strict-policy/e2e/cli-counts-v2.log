@@ -1,0 +1,20 @@
+before: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6269892
+cmd (as root): python3 -m processpulse.agent --out results/raw/s2.6-counts-v2-20261019T132252 --duration 10 --interval-ms 500 --schema 2
+{
+  "out": "results/raw/s2.6-counts-v2-20261019T132252",
+  "counts": {
+    "samples": 21,
+    "snapshots": 21,
+    "failed_snapshots": 0
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  }
+}
+agent rc=0
+cmd: python3 tools/acceptance/validate_run.py results/raw/s2.6-counts-v2-20261019T132252 --min-span-s 8 --json results/acceptance/m1b/s2.6/e2e/validation-counts-v2.json
+validate rc=0
+after: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6284776

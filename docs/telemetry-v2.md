@@ -194,10 +194,9 @@ schedule violation, at least one keyframe, and a valid state at the end. Failed 
 
 ## 8. Bigram records (M1b S2.1: schema and consumer)
 
-Status: schema, validator, chunking rule and `Reconstructor` implemented (S2
-step 1, uncommitted). The producer (`V2Emitter` integration, agent option) and
-the BPF capability are later S2 steps; until then no agent run writes these
-records. Contract sources: M1b plan v3 D2/D5/D12/D13, the S2 design report
+Status: schema, validator, chunking rule and `Reconstructor` (S2.1); BPF
+capability (S2.3); producer `V2Emitter(bigrams=...)` and the agent option
+`--schema 2 --capabilities counts,bigrams` (S2.6, §8.7). Contract sources: M1b plan v3 D2/D5/D12/D13, the S2 design report
 §3.7, and the approved decisions U1 (additive v2 extension), U4
 (`bigram_dropped` = every lost pair), U5 (the nine-syscall vocabulary
 `v1-3aba869d1752`), U8 (schema 2 and explicit selection only) and U10 (bigram
@@ -242,7 +241,8 @@ second raises. With the current vocabulary a table has at most
 maximal-width pairs with a maximal key is still within the byte rule (tested).
 Whenever the producer emits a `bpf_proc` it emits that process's full table.
 
-**Requirement for the S2.6 emitter (S2.3 audit, finding 4).** Design §3.7's
+**Requirement for the S2.6 emitter (S2.3 audit, finding 4; implemented in
+S2.6, §8.7).** Design §3.7's
 "a pair change implies a count change" does not hold for live reads: a probe
 increments the count first and the pair (or `pairs_lost`) second, and the maps
 are read one after the other. A snapshot can therefore see a count without
@@ -278,9 +278,8 @@ counts, `pairs_lost` and the pair sum (S2.3).
    waits for in-flight invocations, then reads the maps twice and requires
    the reads to be equal;
    the one `snapshot()` allowed after it is the drained snapshot
-   (`last_snapshot_drained`; `docs/bpf-collector.md`, "Final drain"). Writing
-   `drained: true` into the end record is the S2.6 emitter's job; until then
-   no run writes it.
+   (`last_snapshot_drained`; `docs/bpf-collector.md`, "Final drain"). The
+   S2.6 emitter writes `drained: true` exactly for that snapshot (§8.7).
 6. **Loss:** `SnapshotView.pair_loss_possible` is true when `bigram_dropped`
    rose since the previous successful snapshot, `null` when it cannot be
    judged (no bigram health, or no previous value). `loss_possible` keeps its
@@ -292,7 +291,7 @@ counts, `pairs_lost` and the pair sum (S2.3).
    seq 0 with every successful snapshot applied and no invalidation;
    `last_ok_end` is the end record of the last applied successful snapshot.
 
-Not in S2.1/S2.2: validation of bigram streams by `validate_run.py` (S2 step 6).
+`validate_run.py` checks bigram streams since S2.6 (§8.7).
 
 ### 8.5 Resolved contract points (S2.2)
 
@@ -415,3 +414,95 @@ pairs, counts, segment starts and segment ends. It does not model losses or
 calls the script does not list (for example a helper's own startup calls),
 so it is ground truth only for a zero-loss run whose script lists every
 observed call.
+
+### 8.7 Producer and agent integration (S2.6)
+
+**Selection (U8, U9).**
+- `agent --schema 2 --capabilities counts,bigrams` selects bigrams.
+- `--capabilities` defaults to `counts` and `--schema` to 1, so the default
+  output is unchanged.
+- Refused, both by the CLI and by `Agent`:
+  - bigrams without schema 2;
+  - bigrams without counts;
+  - `priv` or `net`;
+  - an empty or duplicate list.
+
+**Startup failure (strict by default).** If bigrams are requested and the
+bigram program cannot be started, or preflight fails, the run fails:
+- whatever was started is closed. A close error is not hidden: it is added
+  to the original exception as a note and to the manifest's
+  `cleanup_errors`;
+- no other collector is started and no telemetry is written;
+- `manifest.json` has `status: failed`, an `error` with the capability, the
+  exact reason and the exception type, and the `requested`, `active` and
+  `failed` capabilities;
+- `Agent.run()` raises `StartupError` chained to the original exception,
+  and the CLI exits with status 1.
+
+`--no-bpf` together with bigrams is refused.
+
+**Explicit degraded mode (`--allow-degraded`).** Only with this flag does
+the agent close the failed bigram program and run the counts-only collector.
+`manifest.json` then records `status: ok`, `degraded: true`,
+`config.allow_degraded`, and `capabilities` `{requested, active, failed:
+{bigrams: reason}}`. Bigrams are `unavailable` for the whole epoch:
+- `capabilities.bigrams` = `{status: unavailable, epoch: null, err:
+  UNSUPPORTED, reason}`;
+- every `bpf_proc` has `pairs_lost: null` and `bigrams_err: UNSUPPORTED`;
+- no `bpf_bigrams` records;
+- the end record has `totals.bigrams` null, `bigram_health` null and
+  `drained` false.
+
+An available, empty table is a different thing: one part with `pairs: []`.
+
+**Emitter (`V2Emitter(bigrams="ok")`).**
+- **Tables:** each snapshot's tables come from the collector's
+  `last_bigrams`, read in the same `snapshot()` as the counts. The health
+  comes from `bigram_health()`, read right after. If either read fails, or a
+  reported process has no table, the snapshot is `failed`: nothing is
+  emitted, the emitted state does not change, and removals are kept for the
+  next snapshot.
+- **Change detection (§8.3):** a process, with its full table, is emitted
+  when it is new, in a keyframe, or when any `bpf_proc` field changed. That
+  includes the counts and `pairs_lost`, or the pair table alone.
+- **Order:** begin, all `bpf_proc`, all parts (`bigram_parts`, at most 1,024
+  pairs and the byte rule per record), all `bpf_reclaimed`, end.
+- **Size, measured:** the widest possible part (1,024 pairs of maximal
+  width, maximal key and numbers) is 62,739 bytes, or 62,740 bytes with its
+  LF, so a `bpf_bigrams` line stays under 65,536 bytes even with the LF.
+  - Parts are sized with placeholder part numbers, so a part can be split a
+    few bytes before the limit, but it never exceeds it.
+  - A pair that cannot fit in any record raises `RecordTooLarge` and aborts
+    the run; it is never truncated.
+
+  (`tests/test_bigram_chunk_limits.py`)
+- **Keyframes:** the keyframe and `due` rules of §4 are unchanged. A failed
+  scheduled keyframe keeps `due`, and the recovery keyframe carries every
+  table.
+- **`drained`** is true only when the collector took this very snapshot as
+  its drained snapshot (`last_snapshot_drained` after the `snapshot()` call),
+  and only if the snapshot succeeded.
+
+**End of a bigram epoch (agent).** At the normal end of collection, in this
+order:
+1. Stop the resource supervisor and check that its thread has ended
+   (`ResourceCollector.stopped`). It calls `exclude()` on every spawn.
+   Otherwise there is no drain (`skipped`).
+2. Call `drain()`. A failure or `unstable` result ends the run without
+   another snapshot.
+3. After a successful drain, build exactly one more snapshot with
+   `resource_seq` null. Its end record is `drained: true` only if the
+   collector marked it; a failed cross-check is written as a `failed`
+   snapshot.
+
+`manifest.json` `drain` records the outcome: `supervisor_stopped`, `status`,
+`drained`, `reason`, `reads`, `accounting` and `final_snapshot` (`seq`,
+`status`, `drained`). An error during collection propagates without a drain;
+both collectors are always stopped and closed.
+
+**Validation (`tools/acceptance/validate_run.py`).**
+- A snapshot with `resource_seq` null is allowed only as the last one, and
+  is not part of the per-sample alignment.
+- On bigram runs it reports `check_ib2_drained` and
+  `check_quiescent_reports` per invariant. Any FAIL fails the run.
+- `--require-drained` also requires a drained final snapshot.

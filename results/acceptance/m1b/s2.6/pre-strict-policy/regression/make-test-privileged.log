@@ -1,0 +1,325 @@
+before: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6263388
+cmd (as root): PYTHONUSERBASE=/home/mypc/.local make test-privileged
+python3 -m pytest tests/ -v -m "privileged"
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 680 items / 591 deselected / 89 selected
+
+tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs PASSED [  1%]
+tests/test_agent.py::test_full_run_aligns_streams_and_excludes_itself PASSED [  2%]
+tests/test_agent_bigrams_bpf.py::test_agent_bigram_run_is_valid_drained_and_balanced PASSED [  3%]
+tests/test_agent_bigrams_bpf.py::test_counts_only_schema2_run_keeps_the_s0_shape PASSED [  4%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1] PASSED      [  5%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1000] PASSED   [  6%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1] PASSED        [  7%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1000] PASSED     [  8%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1] PASSED      [ 10%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1000] PASSED   [ 11%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1] PASSED       [ 12%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1000] PASSED    [ 13%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[openat] PASSED [ 14%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[execve] PASSED [ 15%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone] PASSED  [ 16%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_mixed_sequence PASSED [ 17%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_across_an_exec PASSED [ 19%]
+tests/test_bigrams_acceptance.py::test_ground_truth_over_a_scope_with_exit_and_purge PASSED [ 20%]
+tests/test_bigrams_bpf.py::test_two_compilations_same_tracepoints_and_one_extra_map PASSED [ 21%]
+tests/test_bigrams_bpf.py::test_counts_only_build_has_no_bigram_map_and_keeps_its_counters_at_zero PASSED [ 22%]
+tests/test_bigrams_bpf.py::test_exact_pair_deltas_for_a_scripted_sequence[1] PASSED [ 23%]
+tests/test_bigrams_bpf.py::test_exact_pair_deltas_for_a_scripted_sequence[1000] PASSED [ 24%]
+tests/test_bigrams_bpf.py::test_markers_of_a_process_started_after_arming PASSED [ 25%]
+tests/test_bigrams_bpf.py::test_attach_and_pre_arm PASSED                [ 26%]
+tests/test_bigrams_bpf.py::test_row_1_counts_map_full PASSED             [ 28%]
+tests/test_bigrams_bpf.py::test_row_2_thread_map_full PASSED             [ 29%]
+tests/test_bigrams_bpf.py::test_row_3_bigram_map_full_keeps_prev PASSED  [ 30%]
+tests/test_bigrams_bpf.py::test_exec_with_a_full_thread_map_loses_no_extra_pair PASSED [ 31%]
+tests/test_bigrams_bpf.py::test_thread_map_full_before_arming_is_counted_once PASSED [ 32%]
+tests/test_bigrams_bpf.py::test_v1_record_stays_valid_in_a_bigrams_build PASSED [ 33%]
+tests/test_bigrams_bpf.py::test_threads_start_new_segments_and_slots_are_cleaned PASSED [ 34%]
+tests/test_bigrams_bpf.py::test_leader_exec_starts_an_exec_segment PASSED [ 35%]
+tests/test_bigrams_bpf.py::test_non_leader_exec PASSED                   [ 37%]
+tests/test_bigrams_bpf.py::test_reused_tid_is_a_new_thread PASSED        [ 38%]
+tests/test_bigrams_bpf.py::test_exit_reclaims_the_pair_entries_with_the_process PASSED [ 39%]
+tests/test_bigrams_bpf.py::test_self_exclusion_purges_pairs_into_the_purge_totals PASSED [ 40%]
+tests/test_bigrams_bpf.py::test_every_map_entry_decodes_and_markers_are_never_second PASSED [ 41%]
+tests/test_bpf_collector.py::test_exactly_two_compilations_and_the_planned_tracepoints PASSED [ 42%]
+tests/test_bpf_collector.py::test_thread_slots_follow_thread_lifetime_without_touching_counts PASSED [ 43%]
+tests/test_bpf_collector.py::test_stale_slot_from_a_reused_tid_is_detected_and_replaced PASSED [ 44%]
+tests/test_bpf_collector.py::test_exec_from_a_non_leader_thread_drops_the_old_tid_slot PASSED [ 46%]
+tests/test_bpf_collector.py::test_exclusion_purges_thread_slots PASSED   [ 47%]
+tests/test_bpf_collector.py::test_exec_refreshes_comm_and_keeps_attribution PASSED [ 48%]
+tests/test_bpf_collector.py::test_rename_without_exec_is_not_refreshed PASSED [ 49%]
+tests/test_bpf_collector.py::test_cgroup_is_refreshed_at_exec_not_per_event PASSED [ 50%]
+tests/test_dit1.py::test_check1_container_visible_pid PASSED             [ 51%]
+tests/test_dit1.py::test_check2_distro_pid_agrees_everywhere PASSED      [ 52%]
+tests/test_dit1.py::test_check3_pid_namespace_identity PASSED            [ 53%]
+tests/test_dit1.py::test_check4_cgroup_and_container_id PASSED           [ 55%]
+tests/test_dit1.py::test_check5_exact_counts_and_start_time PASSED       [ 56%]
+tests/test_dit1.py::test_check6_exit_reported_once_then_reclaimed PASSED [ 57%]
+tests/test_dit1.py::test_check7_namespace_mismatch_is_unresolved PASSED  [ 58%]
+tests/test_drain_bpf.py::test_drain_detaches_every_probe_and_freezes_the_maps PASSED [ 59%]
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[0] PASSED [ 60%]
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[1] PASSED [ 61%]
+tests/test_drain_bpf.py::test_a_drain_during_busy_loops_is_stable_and_every_key_balances[2] PASSED [ 62%]
+tests/test_drain_bpf.py::test_drained_values_equal_the_ground_truth_of_live_exited_reclaimed_and_purged PASSED [ 64%]
+tests/test_drain_bpf.py::test_the_double_read_sees_activity_on_attached_probes PASSED [ 65%]
+tests/test_drain_bpf.py::test_counts_only_drain PASSED                   [ 66%]
+tests/test_exclusion_purge.py::test_exclude_an_idle_process PASSED       [ 67%]
+tests/test_exclusion_purge.py::test_exclude_busy_processes_while_another_stays_exact PASSED [ 68%]
+tests/test_exclusion_purge.py::test_exclude_immediately_after_spawn_like_the_agent PASSED [ 69%]
+tests/test_exclusion_purge.py::test_exit_hook_does_not_touch_an_excluded_process PASSED [ 70%]
+tests/test_exclusion_purge.py::test_counts_only_build_purges_a_busy_process_exactly PASSED [ 71%]
+tests/test_preflight.py::test_privileged_preflight_passes PASSED         [ 73%]
+tests/test_snapshots_bpf.py::test_exit_is_emitted_once_then_reclaimed PASSED [ 74%]
+tests/test_snapshots_bpf.py::test_self_exclusion_purge_is_reported PASSED [ 75%]
+tests/test_snapshots_bpf.py::test_v1_snapshot_records_are_unchanged_by_the_removal_bookkeeping PASSED [ 76%]
+tests/test_snapshots_bpf.py::test_without_tracking_removals_do_not_accumulate PASSED [ 77%]
+tests/test_syscall_collector.py::test_calibration_matches_procfs PASSED  [ 78%]
+tests/test_syscall_collector.py::test_snapshots_are_schema_valid PASSED  [ 79%]
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1] PASSED [ 80%]
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1000] PASSED [ 82%]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1] PASSED  [ 83%]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1000] PASSED [ 84%]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1] PASSED [ 85%]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1000] PASSED [ 86%]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1] PASSED [ 87%]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1000] PASSED [ 88%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[openat] PASSED [ 89%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[execve] PASSED [ 91%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[clone] PASSED [ 92%]
+tests/test_syscall_collector.py::test_identity_fields PASSED             [ 93%]
+tests/test_syscall_collector.py::test_start_ticks_match_procfs_for_1000_processes PASSED [ 94%]
+tests/test_syscall_collector.py::test_exit_reported_once_then_reclaimed PASSED [ 95%]
+tests/test_syscall_collector.py::test_own_events_are_excluded_and_counted PASSED [ 96%]
+tests/test_syscall_collector.py::test_namespace_inode_mismatch_is_unresolved_never_attributed PASSED [ 97%]
+tests/test_syscall_collector.py::test_map_full_is_counted_not_fatal PASSED [ 98%]
+tests/test_syscall_collector.py::test_kernel_timestamps_fall_between_userspace_reads PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs
+  /usr/lib/python3/dist-packages/bcc/disassembler.py:25: DeprecationWarning: Due to '_pack_', the 'BPFInstrFields' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    class BPFInstrFields(ct.Structure):
+
+tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs
+  /usr/lib/python3/dist-packages/bcc/disassembler.py:34: DeprecationWarning: Due to '_pack_', the 'BPFInstr' Union will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    class BPFInstr(ct.Union):
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 5 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:430: DeprecationWarning: not a bytes object: '/*\n * calibrate.bpf.c — one-shot PID-namespace calibration (loaded by\n * processpulse/syscalls.py before the counter program).\n *\n * The agent calls getpid() a few times; for every caller this records the\n * thread-group leader\'s pid-namespace level and, for each level, the PID\n * number and the namespace inode. Userspace finds the level whose\n * (nr, inode) equals (getpid(), stat("/proc/self/ns/pid").st_ino): that is\n * the distro level L_d used by the counter program.\n */\n#include <uapi/linux/ptrace.h>\n#include <linux/sched.h>\n#include <linux/pid.h>\n#include <linux/pid_namespace.h>\n\n#define CAL_LEVELS 8\n\nstruct cal_t {\n    u32 level;\n    u32 nr[CAL_LEVELS];\n    u32 inum[CAL_LEVELS];\n};\n\nBPF_HASH(cal, u32, struct cal_t, 256);   /* key: host tgid */\n\nTRACEPOINT_PROBE(syscalls, sys_enter_getpid)\n{\n    struct cal_t c = {};\n    struct task_struct *task = (struct task_struct *)bpf_get_current_task();\n    struct task_struct *leader = NULL;\n    struct pid *p = NULL;\n    unsigned int level = 0;\n    u32 host_tgid = bpf_get_current_pid_tgid() >> 32;\n\n    bpf_probe_read_kernel(&leader, sizeof(leader), &task->group_leader);\n    bpf_probe_read_kernel(&p, sizeof(p), &leader->thread_pid);\n    if (p == NULL)\n        return 0;\n    bpf_probe_read_kernel(&level, sizeof(level), &p->level);\n    c.level = level;\n#pragma unroll\n    for (int i = 0; i < CAL_LEVELS; i++) {\n        if (i <= level) {\n            struct upid up = {};\n            unsigned int inum = 0;\n            bpf_probe_read_kernel(&up, sizeof(up), &p->numbers[i]);\n            bpf_probe_read_kernel(&inum, sizeof(inum), &up.ns->ns.inum);\n            c.nr[i] = up.nr;\n            c.inum[i] = inum;\n        }\n    }\n    cal.update(&host_tgid, &c);\n    return 0;\n}\n'
+    text = _assert_is_bytes(text)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 5 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'cal'
+    name = _assert_is_bytes(name)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 5 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'cal_t' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_bpf.py: 1 warning
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 1 warning
+tests/test_exclusion_purge.py: 1 warning
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:430: DeprecationWarning: not a bytes object: '/*\n * common.h — definitions shared by every capability of the unified BPF\n * program built by processpulse/bpf_collector.py (M1b S1).\n *\n * The collector compiles ONE program per start: this file, then the source\n * of every enabled capability (e.g. syscall_counter.bpf.c), then core.bpf.c\n * (the scheduler hooks), then generated per-syscall probes. Compile-time\n * constants come from cflags:\n *   DISTRO_LEVEL       pid-namespace level of the Ubuntu distro (calibrated)\n *   DISTRO_PIDNS_INUM  inode of the distro pid namespace (calibrated)\n *   MAX_THREADS        capacity of the per-thread slot map\n *   PPC_CAP_<NAME>     one per enabled capability\n * Source order: common.h, bigrams.bpf.c (if enabled), syscall_counter.bpf.c,\n * core.bpf.c, probes. The counter calls the bigram hooks, so the bigram\n * source precedes it.\n *\n * Identity is resolved in-kernel (CLAUDE.md §5): an event is attributed only\n * if the task\'s pid has a number at DISTRO_LEVEL *in the distro namespace*\n * (sibling WSL distros share the level, so the inode is checked). Anything\n * else increments H_UNRESOLVED and is never assigned to a process.\n */\n#include <uapi/linux/ptrace.h>\n#include <linux/sched.h>\n#include <linux/pid.h>\n#include <linux/pid_namespace.h>\n\n#define MAX_LEVEL 8\n\n/* health[] indices — must match HEALTH_FIELDS in processpulse/bpf_collector.py.\n * 0-4 are the M1 counters (same order; reported in the v1 snapshot record). */\n#define H_COUNTS_FULL     0\n#define H_INFO_FULL       1\n#define H_UNRESOLVED      2\n#define H_SELF            3\n#define H_EXIT            4\n#define H_THREAD_FULL     5   /* a thread slot could not be created */\n#define H_THREAD_STALE    6   /* a slot belonged to an earlier thread with the same TID */\n#define H_THREAD_CLEANED  7   /* slots deleted at thread exit or after exec */\n#define H_EXEC_REFRESH    8   /* process metadata refreshed at exec */\n/* 9-11: maintained only by bigrams.bpf.c (stay 0 in other builds). */\n#define H_BIGRAM_FULL     9   /* R-LOSS row 3: the bigram map was full */\n#define H_BIGRAM_DROPPED 10   /* every pair not recorded (rows 1-3 and pre-arm events) */\n#define H_PRE_ARM        11   /* counted entries before arming; their pairs are lost */\n#define NHEALTH          12\n\nstruct pkey {\n    u64 start_ns;          /* group_leader->start_boottime */\n    u32 tgid;              /* tgid in the distro pid namespace */\n    u32 pad;\n};\n\n/* Per-thread state. Keyed by the host (initial-namespace) TID, which is used\n * only as a map key here and never emitted as identity. The thread\'s own\n * start time distinguishes a reused TID from the thread that owned the slot. */\nstruct tslot {\n    u64 thread_start_ns;   /* task->start_boottime of this thread */\n    struct pkey proc;      /* the process the thread belongs to */\n    u32 tid;               /* thread id in the distro pid namespace (informational) */\n    u16 prev;              /* bigrams: code of the previous observed call or marker */\n    u16 pad;\n};\n\nBPF_HASH(excluded, u32, u8, 64);        /* distro tgids of our own collectors */\nBPF_HASH(threads, u32, struct tslot, MAX_THREADS);\nBPF_ARRAY(health, u64, NHEALTH);\n\nstatic __always_inline void hinc(int idx)\n{\n    u64 *v = health.lookup(&idx);\n    if (v)\n        __sync_fetch_and_add(v, 1);\n}\n\n/* Returns 0 and fills k/level/cpid when the current task resolves. */\nstatic __always_inline int resolve(struct pkey *k, u32 *level_out, u32 *cpid_out)\n{\n    struct task_struct *task = (struct task_struct *)bpf_get_current_task();\n    struct task_struct *leader = NULL;\n    struct pid *p = NULL;\n    unsigned int level = 0, inum = 0;\n    struct upid up = {};\n    u64 start = 0;\n\n    bpf_probe_read_kernel(&leader, sizeof(leader), &task->group_leader);\n    if (leader == NULL)\n        return -1;\n    bpf_probe_read_kernel(&p, sizeof(p), &leader->thread_pid);\n    if (p == NULL)\n        return -1;\n    bpf_probe_read_kernel(&level, sizeof(level), &p->level);\n    if (level < DISTRO_LEVEL || level >= MAX_LEVEL)\n        return -1;\n    bpf_probe_read_kernel(&up, sizeof(up), &p->numbers[DISTRO_LEVEL]);\n    if (up.ns == NULL)\n        return -1;\n    bpf_probe_read_kernel(&inum, sizeof(inum), &up.ns->ns.inum);\n    if (inum != DISTRO_PIDNS_INUM || up.nr <= 0)\n        return -1;\n    bpf_probe_read_kernel(&start, sizeof(start), &leader->start_boottime);\n\n    k->start_ns = start;\n    k->tgid = (u32)up.nr;\n    k->pad = 0;\n    *level_out = level;\n    *cpid_out = 0;\n    if (level > DISTRO_LEVEL) {\n        struct upid own = {};\n        bpf_probe_read_kernel(&own, sizeof(own), &p->numbers[level]);\n        *cpid_out = (u32)own.nr;\n    }\n    return 0;\n}\n\n/* Ensures the current thread has a slot for process k (called for attributed,\n * non-excluded events only). Returns the slot, or NULL when the slot map is\n * full; *created is 1 when a new slot was made (a replaced stale slot is a\n * new thread). A capability that keeps state in the slot initialises it. */\nstatic __always_inline struct tslot *thread_touch(const struct pkey *k, int *created)\n{\n    struct task_struct *task = (struct task_struct *)bpf_get_current_task();\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n    u64 start = 0;\n    struct tslot *s;\n    struct tslot ns = {};\n    struct pid *tp = NULL;\n    struct upid up = {};\n\n    *created = 0;\n    bpf_probe_read_kernel(&start, sizeof(start), &task->start_boottime);\n    s = threads.lookup(&tid);\n    if (s) {\n        if (s->thread_start_ns == start)\n            return s;\n        hinc(H_THREAD_STALE);   /* the previous owner of this TID left without an exit */\n    }\n    /* Threads share the leader\'s pid namespaces, already checked by resolve(). */\n    bpf_probe_read_kernel(&tp, sizeof(tp), &task->thread_pid);\n    if (tp != NULL)\n        bpf_probe_read_kernel(&up, sizeof(up), &tp->numbers[DISTRO_LEVEL]);\n    ns.thread_start_ns = start;\n    ns.proc = *k;\n    ns.tid = (u32)up.nr;\n    if (threads.update(&tid, &ns) != 0) {\n        hinc(H_THREAD_FULL);\n        return NULL;\n    }\n    *created = 1;\n    return threads.lookup(&tid);\n}\n\n/* sched_process_exit runs for every exiting thread: drop its slot. */\nstatic __always_inline void thread_exit(void)\n{\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n\n    if (threads.delete(&tid) == 0)\n        hinc(H_THREAD_CLEANED);\n}\n\n/* A non-leader thread that execs takes over the leader\'s TID (de_thread);\n * its old TID never exits, so its slot is dropped here. */\nstatic __always_inline void thread_exec(u32 old_tid)\n{\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n\n    if (old_tid != tid && threads.delete(&old_tid) == 0)\n        hinc(H_THREAD_CLEANED);\n}\n\n/*\n * syscall_counter.bpf.c — capability "counts": per-process syscall-ENTRY\n * counters (M1; ported to the unified program in M1b S1).\n *\n * Compiled after common.h (see there), with:\n *   MAX_PROCS          capacity of the counts/info maps\n *   NSYSCALLS          number of counted syscalls (processpulse/vocab.py)\n * processpulse/bpf_collector.py appends one\n * TRACEPOINT_PROBE(syscalls, sys_enter_<name>) { return count_syscall(i); }\n * per vocabulary entry. core.bpf.c calls counts_on_exit() / counts_on_exec().\n *\n * Counters are cumulative and never reset; userspace computes deltas and\n * reclaims exited entries after reporting them once. Map layouts are the\n * M1 layouts. Process metadata (comm, cgroup) is captured when the entry is\n * created and refreshed at exec, not on every event (F9).\n */\n\nstruct pcounts {\n    u64 c[NSYSCALLS];\n#ifdef PPC_CAP_BIGRAMS\n    u64 pairs_lost;        /* counted entries whose pair was not recorded (U7) */\n#endif\n};\n\nstruct pinfo {\n    u64 cgroup_id;         /* bpf_get_current_cgroup_id() at creation / last exec */\n    u64 last_ktime;        /* bpf_ktime_get_ns() at the last event (diagnostic) */\n    u32 host_tgid;         /* initial-namespace tgid (diagnostic) */\n    u32 level;             /* pid-namespace level of the thread-group leader */\n    u32 container_pid;     /* pid in the task\'s own namespace if level > DISTRO_LEVEL */\n    u32 exited;            /* set by sched_process_exit when the group is dead */\n    char comm[16];         /* task comm at creation / last exec */\n};\n\nBPF_HASH(counts, struct pkey, struct pcounts, MAX_PROCS);\nBPF_HASH(info, struct pkey, struct pinfo, MAX_PROCS);\n\nstatic __always_inline int count_syscall(int sc)\n{\n    struct pkey k = {};\n    struct pcounts zero = {};\n    struct pcounts *c;\n    struct pinfo *pi;\n    struct tslot *slot;\n    int created = 0;\n    u32 level = 0, cpid = 0;\n\n    if (resolve(&k, &level, &cpid) != 0) {\n        hinc(H_UNRESOLVED);\n        return 0;\n    }\n    if (excluded.lookup(&k.tgid)) {\n        hinc(H_SELF);\n        return 0;\n    }\n    slot = thread_touch(&k, &created);\n    (void)slot;\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_slot(slot, created);\n#endif\n    c = counts.lookup_or_try_init(&k, &zero);\n    if (c == NULL) {\n        hinc(H_COUNTS_FULL);\n#ifdef PPC_CAP_BIGRAMS\n        bigram_count_lost(slot);\n#endif\n        return 0;\n    }\n    __sync_fetch_and_add(&c->c[sc], 1);\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_entry(&k, slot, sc, &c->pairs_lost);\n#endif\n\n    pi = info.lookup(&k);\n    if (pi == NULL) {\n        struct pinfo ni = {};\n        ni.cgroup_id = bpf_get_current_cgroup_id();\n        ni.last_ktime = bpf_ktime_get_ns();\n        ni.host_tgid = bpf_get_current_pid_tgid() >> 32;\n        ni.level = level;\n        ni.container_pid = cpid;\n        bpf_get_current_comm(&ni.comm, sizeof(ni.comm));\n        if (info.insert(&k, &ni) != 0)\n            hinc(H_INFO_FULL);\n    } else {\n        pi->last_ktime = bpf_ktime_get_ns();\n    }\n    return 0;\n}\n\nstatic __always_inline void counts_on_exit(struct pkey *k)\n{\n    struct pinfo *pi = info.lookup(k);\n\n    if (pi)\n        pi->exited = 1;\n}\n\n/* exec replaces the program: comm changes, and the cgroup is the one the new\n * program runs in (e.g. a container\'s scope after runc init). */\nstatic __always_inline void counts_on_exec(struct pkey *k)\n{\n    struct pinfo *pi = info.lookup(k);\n\n    if (pi == NULL)\n        return;\n    pi->cgroup_id = bpf_get_current_cgroup_id();\n    bpf_get_current_comm(&pi->comm, sizeof(pi->comm));\n    hinc(H_EXEC_REFRESH);\n}\n\n/*\n * core.bpf.c — scheduler hooks of the unified BPF program, compiled after\n * common.h and the enabled capability sources (see common.h). Each hook runs\n * the shared per-thread bookkeeping and then dispatches to the capabilities\n * compiled in (PPC_CAP_<NAME>). A tracepoint can have only one probe per\n * program, which is why the dispatch lives here.\n */\n\nTRACEPOINT_PROBE(sched, sched_process_exit)\n{\n    struct pkey k = {};\n    u32 level = 0, cpid = 0;\n\n    thread_exit();                       /* every thread (F4) */\n    if (!args->group_dead)\n        return 0;\n    if (resolve(&k, &level, &cpid) != 0)\n        return 0;\n    hinc(H_EXIT);\n    /* An excluded process\'s entries are purged by userspace (exclude()): never\n     * write to them, so no write can race the purge\'s deletes. */\n    if (excluded.lookup(&k.tgid))\n        return 0;\n#ifdef PPC_CAP_COUNTS\n    counts_on_exit(&k);\n#endif\n    return 0;\n}\n\nTRACEPOINT_PROBE(sched, sched_process_exec)\n{\n    struct pkey k = {};\n    u32 level = 0, cpid = 0;\n\n    thread_exec((u32)args->old_pid);\n    if (resolve(&k, &level, &cpid) != 0)\n        return 0;\n    if (excluded.lookup(&k.tgid))\n        return 0;\n#ifdef PPC_CAP_COUNTS\n    counts_on_exec(&k);\n#endif\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_exec(&k);\n#endif\n    return 0;\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_execve)\n{\n    return count_syscall(0);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_execveat)\n{\n    return count_syscall(1);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_open)\n{\n    return count_syscall(2);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_openat)\n{\n    return count_syscall(3);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_openat2)\n{\n    return count_syscall(4);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_clone)\n{\n    return count_syscall(5);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_clone3)\n{\n    return count_syscall(6);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_fork)\n{\n    return count_syscall(7);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_vfork)\n{\n    return count_syscall(8);\n}\n'
+    text = _assert_is_bytes(text)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'excluded'
+    name = _assert_is_bytes(name)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'counts'
+    name = _assert_is_bytes(name)
+
+tests/test_agent.py: 6 warnings
+tests/test_agent_bigrams_bpf.py: 7 warnings
+tests/test_bigrams_acceptance.py: 4 warnings
+tests/test_bigrams_bpf.py: 23 warnings
+tests/test_bpf_collector.py: 6 warnings
+tests/test_dit1.py: 6 warnings
+tests/test_drain_bpf.py: 27 warnings
+tests/test_exclusion_purge.py: 7 warnings
+tests/test_snapshots_bpf.py: 6 warnings
+tests/test_syscall_collector.py: 9 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'pkey' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'pcounts' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'info'
+    name = _assert_is_bytes(name)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'pinfo' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'threads'
+    name = _assert_is_bytes(name)
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_exclusion_purge.py: 2 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'tslot' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent.py: 2 warnings
+tests/test_agent_bigrams_bpf.py: 2 warnings
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 2 warnings
+tests/test_dit1.py: 2 warnings
+tests/test_drain_bpf.py: 7 warnings
+tests/test_snapshots_bpf.py: 2 warnings
+tests/test_syscall_collector.py: 3 warnings
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'health'
+    name = _assert_is_bytes(name)
+
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 5 warnings
+tests/test_drain_bpf.py: 6 warnings
+tests/test_exclusion_purge.py: 1 warning
+  /usr/lib/python3/dist-packages/bcc/__init__.py:430: DeprecationWarning: not a bytes object: '/*\n * common.h — definitions shared by every capability of the unified BPF\n * program built by processpulse/bpf_collector.py (M1b S1).\n *\n * The collector compiles ONE program per start: this file, then the source\n * of every enabled capability (e.g. syscall_counter.bpf.c), then core.bpf.c\n * (the scheduler hooks), then generated per-syscall probes. Compile-time\n * constants come from cflags:\n *   DISTRO_LEVEL       pid-namespace level of the Ubuntu distro (calibrated)\n *   DISTRO_PIDNS_INUM  inode of the distro pid namespace (calibrated)\n *   MAX_THREADS        capacity of the per-thread slot map\n *   PPC_CAP_<NAME>     one per enabled capability\n * Source order: common.h, bigrams.bpf.c (if enabled), syscall_counter.bpf.c,\n * core.bpf.c, probes. The counter calls the bigram hooks, so the bigram\n * source precedes it.\n *\n * Identity is resolved in-kernel (CLAUDE.md §5): an event is attributed only\n * if the task\'s pid has a number at DISTRO_LEVEL *in the distro namespace*\n * (sibling WSL distros share the level, so the inode is checked). Anything\n * else increments H_UNRESOLVED and is never assigned to a process.\n */\n#include <uapi/linux/ptrace.h>\n#include <linux/sched.h>\n#include <linux/pid.h>\n#include <linux/pid_namespace.h>\n\n#define MAX_LEVEL 8\n\n/* health[] indices — must match HEALTH_FIELDS in processpulse/bpf_collector.py.\n * 0-4 are the M1 counters (same order; reported in the v1 snapshot record). */\n#define H_COUNTS_FULL     0\n#define H_INFO_FULL       1\n#define H_UNRESOLVED      2\n#define H_SELF            3\n#define H_EXIT            4\n#define H_THREAD_FULL     5   /* a thread slot could not be created */\n#define H_THREAD_STALE    6   /* a slot belonged to an earlier thread with the same TID */\n#define H_THREAD_CLEANED  7   /* slots deleted at thread exit or after exec */\n#define H_EXEC_REFRESH    8   /* process metadata refreshed at exec */\n/* 9-11: maintained only by bigrams.bpf.c (stay 0 in other builds). */\n#define H_BIGRAM_FULL     9   /* R-LOSS row 3: the bigram map was full */\n#define H_BIGRAM_DROPPED 10   /* every pair not recorded (rows 1-3 and pre-arm events) */\n#define H_PRE_ARM        11   /* counted entries before arming; their pairs are lost */\n#define NHEALTH          12\n\nstruct pkey {\n    u64 start_ns;          /* group_leader->start_boottime */\n    u32 tgid;              /* tgid in the distro pid namespace */\n    u32 pad;\n};\n\n/* Per-thread state. Keyed by the host (initial-namespace) TID, which is used\n * only as a map key here and never emitted as identity. The thread\'s own\n * start time distinguishes a reused TID from the thread that owned the slot. */\nstruct tslot {\n    u64 thread_start_ns;   /* task->start_boottime of this thread */\n    struct pkey proc;      /* the process the thread belongs to */\n    u32 tid;               /* thread id in the distro pid namespace (informational) */\n    u16 prev;              /* bigrams: code of the previous observed call or marker */\n    u16 pad;\n};\n\nBPF_HASH(excluded, u32, u8, 64);        /* distro tgids of our own collectors */\nBPF_HASH(threads, u32, struct tslot, MAX_THREADS);\nBPF_ARRAY(health, u64, NHEALTH);\n\nstatic __always_inline void hinc(int idx)\n{\n    u64 *v = health.lookup(&idx);\n    if (v)\n        __sync_fetch_and_add(v, 1);\n}\n\n/* Returns 0 and fills k/level/cpid when the current task resolves. */\nstatic __always_inline int resolve(struct pkey *k, u32 *level_out, u32 *cpid_out)\n{\n    struct task_struct *task = (struct task_struct *)bpf_get_current_task();\n    struct task_struct *leader = NULL;\n    struct pid *p = NULL;\n    unsigned int level = 0, inum = 0;\n    struct upid up = {};\n    u64 start = 0;\n\n    bpf_probe_read_kernel(&leader, sizeof(leader), &task->group_leader);\n    if (leader == NULL)\n        return -1;\n    bpf_probe_read_kernel(&p, sizeof(p), &leader->thread_pid);\n    if (p == NULL)\n        return -1;\n    bpf_probe_read_kernel(&level, sizeof(level), &p->level);\n    if (level < DISTRO_LEVEL || level >= MAX_LEVEL)\n        return -1;\n    bpf_probe_read_kernel(&up, sizeof(up), &p->numbers[DISTRO_LEVEL]);\n    if (up.ns == NULL)\n        return -1;\n    bpf_probe_read_kernel(&inum, sizeof(inum), &up.ns->ns.inum);\n    if (inum != DISTRO_PIDNS_INUM || up.nr <= 0)\n        return -1;\n    bpf_probe_read_kernel(&start, sizeof(start), &leader->start_boottime);\n\n    k->start_ns = start;\n    k->tgid = (u32)up.nr;\n    k->pad = 0;\n    *level_out = level;\n    *cpid_out = 0;\n    if (level > DISTRO_LEVEL) {\n        struct upid own = {};\n        bpf_probe_read_kernel(&own, sizeof(own), &p->numbers[level]);\n        *cpid_out = (u32)own.nr;\n    }\n    return 0;\n}\n\n/* Ensures the current thread has a slot for process k (called for attributed,\n * non-excluded events only). Returns the slot, or NULL when the slot map is\n * full; *created is 1 when a new slot was made (a replaced stale slot is a\n * new thread). A capability that keeps state in the slot initialises it. */\nstatic __always_inline struct tslot *thread_touch(const struct pkey *k, int *created)\n{\n    struct task_struct *task = (struct task_struct *)bpf_get_current_task();\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n    u64 start = 0;\n    struct tslot *s;\n    struct tslot ns = {};\n    struct pid *tp = NULL;\n    struct upid up = {};\n\n    *created = 0;\n    bpf_probe_read_kernel(&start, sizeof(start), &task->start_boottime);\n    s = threads.lookup(&tid);\n    if (s) {\n        if (s->thread_start_ns == start)\n            return s;\n        hinc(H_THREAD_STALE);   /* the previous owner of this TID left without an exit */\n    }\n    /* Threads share the leader\'s pid namespaces, already checked by resolve(). */\n    bpf_probe_read_kernel(&tp, sizeof(tp), &task->thread_pid);\n    if (tp != NULL)\n        bpf_probe_read_kernel(&up, sizeof(up), &tp->numbers[DISTRO_LEVEL]);\n    ns.thread_start_ns = start;\n    ns.proc = *k;\n    ns.tid = (u32)up.nr;\n    if (threads.update(&tid, &ns) != 0) {\n        hinc(H_THREAD_FULL);\n        return NULL;\n    }\n    *created = 1;\n    return threads.lookup(&tid);\n}\n\n/* sched_process_exit runs for every exiting thread: drop its slot. */\nstatic __always_inline void thread_exit(void)\n{\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n\n    if (threads.delete(&tid) == 0)\n        hinc(H_THREAD_CLEANED);\n}\n\n/* A non-leader thread that execs takes over the leader\'s TID (de_thread);\n * its old TID never exits, so its slot is dropped here. */\nstatic __always_inline void thread_exec(u32 old_tid)\n{\n    u32 tid = (u32)bpf_get_current_pid_tgid();\n\n    if (old_tid != tid && threads.delete(&old_tid) == 0)\n        hinc(H_THREAD_CLEANED);\n}\n\n/*\n * bigrams.bpf.c — capability "bigrams" (M1b S2.3): per-process counts of\n * pairs (a, b) of consecutive observed tracked calls of one thread, where b\n * is the observed call and a the thread\'s previous observed call or a\n * segment-start marker. Contract: docs/telemetry-v2.md §8, S2 design (R-LOSS,\n * I-B1..I-B5, approved as A8).\n *\n * Compiled after common.h and before syscall_counter.bpf.c, which calls the\n * hooks below; requires the "counts" capability (U9). Adds no tracepoint.\n * Compile-time constants: NSYSCALLS (vocabulary size), MAX_PAIRS (capacity\n * of the bigram map).\n *\n * Codes: 0..NSYSCALLS-1 are the vocabulary syscalls (processpulse/vocab.py);\n * the markers follow. A marker is only ever written into a slot\'s prev, and\n * a pair is always (prev, observed call), so a marker is never the second\n * element (I-B5).\n *\n * R-LOSS, for each observed entry s of process K:\n *   row 1  no counts entry for K and none can be created: count and pair\n *          lost (H_COUNTS_FULL, H_BIGRAM_DROPPED); next prev START_LOST\n *   row 2  counted, no thread slot: pair lost (pairs_lost_K,\n *          H_BIGRAM_DROPPED; H_THREAD_FULL in thread_touch); the time is\n *          kept so the thread\'s next slot starts at START_LOST\n *   row 3  counted, slot ok, bigram map full: pair lost (pairs_lost_K,\n *          H_BIGRAM_FULL, H_BIGRAM_DROPPED); prev := s\n *   ok     counted, pair recorded; prev := s\n * Before arming (U2a) every entry is counted and its pair lost\n * (pairs_lost_K, H_PRE_ARM, H_BIGRAM_DROPPED); prev is not changed.\n */\n\n#define M_START_NEW    (NSYSCALLS + 0)   /* thread started after arming */\n#define M_START_ATTACH (NSYSCALLS + 1)   /* thread existed before arming */\n#define M_START_LOST   (NSYSCALLS + 2)   /* a pair of this thread may have been lost */\n#define M_EXEC         (NSYSCALLS + 3)   /* first call after a successful exec */\n\nstruct bkey {\n    struct pkey proc;\n    u16 a;                 /* previous call code or marker */\n    u16 b;                 /* observed call code (< NSYSCALLS) */\n    u32 pad;\n};\n\nstruct bstate {\n    u64 armed_boot_ns;           /* CLOCK_BOOTTIME read by userspace when arming */\n    u64 last_thread_full_ns;     /* bpf_ktime_get_boot_ns() of the last slot-map-full event */\n    u32 armed;\n    u32 pad;\n};\n\nBPF_HASH(bigrams, struct bkey, u64, MAX_PAIRS);\nBPF_ARRAY(bglobal, struct bstate, 1);\n\nstatic __always_inline struct bstate *bglobal_get(void)\n{\n    int zero = 0;\n\n    return bglobal.lookup(&zero);\n}\n\n/* The marker a new slot starts with (thread start times are boot-clock ns). */\nstatic __always_inline u16 start_marker(u64 thread_start_ns)\n{\n    struct bstate *st = bglobal_get();\n\n    if (st == NULL)\n        return M_START_LOST;\n    if (st->last_thread_full_ns != 0 && thread_start_ns < st->last_thread_full_ns)\n        return M_START_LOST;\n    if (st->armed && thread_start_ns >= st->armed_boot_ns)\n        return M_START_NEW;\n    return M_START_ATTACH;\n}\n\n/* After thread_touch(): classify a new slot, or note a full slot map (row 2). */\nstatic __always_inline void bigram_on_slot(struct tslot *slot, int created)\n{\n    if (slot == NULL) {\n        struct bstate *st = bglobal_get();\n        if (st)\n            st->last_thread_full_ns = bpf_ktime_get_boot_ns();\n        return;\n    }\n    if (created)\n        slot->prev = start_marker(slot->thread_start_ns);\n}\n\n/* Row 1: the entry was not counted, so its pair is lost too (not in pairs_lost). */\nstatic __always_inline void bigram_count_lost(struct tslot *slot)\n{\n    hinc(H_BIGRAM_DROPPED);\n    if (slot)\n        slot->prev = M_START_LOST;\n}\n\n/* A counted entry sc of process k (rows 2, 3, ok and pre-arm). */\nstatic __always_inline void bigram_on_entry(const struct pkey *k, struct tslot *slot, int sc,\n                                            u64 *pairs_lost)\n{\n    struct bstate *st = bglobal_get();\n    struct bkey bk = {};\n    u64 zero = 0;\n    u64 *n;\n\n    if (st == NULL || !st->armed) {\n        hinc(H_PRE_ARM);\n        hinc(H_BIGRAM_DROPPED);\n        __sync_fetch_and_add(pairs_lost, 1);\n        return;\n    }\n    if (slot == NULL) {\n        hinc(H_BIGRAM_DROPPED);\n        __sync_fetch_and_add(pairs_lost, 1);\n        return;\n    }\n    bk.proc = *k;\n    bk.a = slot->prev;\n    bk.b = (u16)sc;\n    n = bigrams.lookup_or_try_init(&bk, &zero);\n    if (n == NULL) {\n        hinc(H_BIGRAM_FULL);\n        hinc(H_BIGRAM_DROPPED);\n        __sync_fetch_and_add(pairs_lost, 1);\n    } else {\n        __sync_fetch_and_add(n, 1);\n    }\n    slot->prev = (u16)sc;\n}\n\n/* sched_process_exec of process k, after the old TID\'s slot was dropped: the\n * exec\'ing thread (now holding the leader\'s TID) continues with EXEC. Before\n * arming the slot keeps its start marker. */\nstatic __always_inline void bigram_on_exec(const struct pkey *k)\n{\n    int created = 0;\n    struct tslot *slot = thread_touch(k, &created);\n    struct bstate *st = bglobal_get();\n\n    bigram_on_slot(slot, created);\n    if (slot && st && st->armed)\n        slot->prev = M_EXEC;\n}\n\n/*\n * syscall_counter.bpf.c — capability "counts": per-process syscall-ENTRY\n * counters (M1; ported to the unified program in M1b S1).\n *\n * Compiled after common.h (see there), with:\n *   MAX_PROCS          capacity of the counts/info maps\n *   NSYSCALLS          number of counted syscalls (processpulse/vocab.py)\n * processpulse/bpf_collector.py appends one\n * TRACEPOINT_PROBE(syscalls, sys_enter_<name>) { return count_syscall(i); }\n * per vocabulary entry. core.bpf.c calls counts_on_exit() / counts_on_exec().\n *\n * Counters are cumulative and never reset; userspace computes deltas and\n * reclaims exited entries after reporting them once. Map layouts are the\n * M1 layouts. Process metadata (comm, cgroup) is captured when the entry is\n * created and refreshed at exec, not on every event (F9).\n */\n\nstruct pcounts {\n    u64 c[NSYSCALLS];\n#ifdef PPC_CAP_BIGRAMS\n    u64 pairs_lost;        /* counted entries whose pair was not recorded (U7) */\n#endif\n};\n\nstruct pinfo {\n    u64 cgroup_id;         /* bpf_get_current_cgroup_id() at creation / last exec */\n    u64 last_ktime;        /* bpf_ktime_get_ns() at the last event (diagnostic) */\n    u32 host_tgid;         /* initial-namespace tgid (diagnostic) */\n    u32 level;             /* pid-namespace level of the thread-group leader */\n    u32 container_pid;     /* pid in the task\'s own namespace if level > DISTRO_LEVEL */\n    u32 exited;            /* set by sched_process_exit when the group is dead */\n    char comm[16];         /* task comm at creation / last exec */\n};\n\nBPF_HASH(counts, struct pkey, struct pcounts, MAX_PROCS);\nBPF_HASH(info, struct pkey, struct pinfo, MAX_PROCS);\n\nstatic __always_inline int count_syscall(int sc)\n{\n    struct pkey k = {};\n    struct pcounts zero = {};\n    struct pcounts *c;\n    struct pinfo *pi;\n    struct tslot *slot;\n    int created = 0;\n    u32 level = 0, cpid = 0;\n\n    if (resolve(&k, &level, &cpid) != 0) {\n        hinc(H_UNRESOLVED);\n        return 0;\n    }\n    if (excluded.lookup(&k.tgid)) {\n        hinc(H_SELF);\n        return 0;\n    }\n    slot = thread_touch(&k, &created);\n    (void)slot;\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_slot(slot, created);\n#endif\n    c = counts.lookup_or_try_init(&k, &zero);\n    if (c == NULL) {\n        hinc(H_COUNTS_FULL);\n#ifdef PPC_CAP_BIGRAMS\n        bigram_count_lost(slot);\n#endif\n        return 0;\n    }\n    __sync_fetch_and_add(&c->c[sc], 1);\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_entry(&k, slot, sc, &c->pairs_lost);\n#endif\n\n    pi = info.lookup(&k);\n    if (pi == NULL) {\n        struct pinfo ni = {};\n        ni.cgroup_id = bpf_get_current_cgroup_id();\n        ni.last_ktime = bpf_ktime_get_ns();\n        ni.host_tgid = bpf_get_current_pid_tgid() >> 32;\n        ni.level = level;\n        ni.container_pid = cpid;\n        bpf_get_current_comm(&ni.comm, sizeof(ni.comm));\n        if (info.insert(&k, &ni) != 0)\n            hinc(H_INFO_FULL);\n    } else {\n        pi->last_ktime = bpf_ktime_get_ns();\n    }\n    return 0;\n}\n\nstatic __always_inline void counts_on_exit(struct pkey *k)\n{\n    struct pinfo *pi = info.lookup(k);\n\n    if (pi)\n        pi->exited = 1;\n}\n\n/* exec replaces the program: comm changes, and the cgroup is the one the new\n * program runs in (e.g. a container\'s scope after runc init). */\nstatic __always_inline void counts_on_exec(struct pkey *k)\n{\n    struct pinfo *pi = info.lookup(k);\n\n    if (pi == NULL)\n        return;\n    pi->cgroup_id = bpf_get_current_cgroup_id();\n    bpf_get_current_comm(&pi->comm, sizeof(pi->comm));\n    hinc(H_EXEC_REFRESH);\n}\n\n/*\n * core.bpf.c — scheduler hooks of the unified BPF program, compiled after\n * common.h and the enabled capability sources (see common.h). Each hook runs\n * the shared per-thread bookkeeping and then dispatches to the capabilities\n * compiled in (PPC_CAP_<NAME>). A tracepoint can have only one probe per\n * program, which is why the dispatch lives here.\n */\n\nTRACEPOINT_PROBE(sched, sched_process_exit)\n{\n    struct pkey k = {};\n    u32 level = 0, cpid = 0;\n\n    thread_exit();                       /* every thread (F4) */\n    if (!args->group_dead)\n        return 0;\n    if (resolve(&k, &level, &cpid) != 0)\n        return 0;\n    hinc(H_EXIT);\n    /* An excluded process\'s entries are purged by userspace (exclude()): never\n     * write to them, so no write can race the purge\'s deletes. */\n    if (excluded.lookup(&k.tgid))\n        return 0;\n#ifdef PPC_CAP_COUNTS\n    counts_on_exit(&k);\n#endif\n    return 0;\n}\n\nTRACEPOINT_PROBE(sched, sched_process_exec)\n{\n    struct pkey k = {};\n    u32 level = 0, cpid = 0;\n\n    thread_exec((u32)args->old_pid);\n    if (resolve(&k, &level, &cpid) != 0)\n        return 0;\n    if (excluded.lookup(&k.tgid))\n        return 0;\n#ifdef PPC_CAP_COUNTS\n    counts_on_exec(&k);\n#endif\n#ifdef PPC_CAP_BIGRAMS\n    bigram_on_exec(&k);\n#endif\n    return 0;\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_execve)\n{\n    return count_syscall(0);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_execveat)\n{\n    return count_syscall(1);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_open)\n{\n    return count_syscall(2);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_openat)\n{\n    return count_syscall(3);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_openat2)\n{\n    return count_syscall(4);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_clone)\n{\n    return count_syscall(5);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_clone3)\n{\n    return count_syscall(6);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_fork)\n{\n    return count_syscall(7);\n}\n\n\nTRACEPOINT_PROBE(syscalls, sys_enter_vfork)\n{\n    return count_syscall(8);\n}\n'
+    text = _assert_is_bytes(text)
+
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 6 warnings
+tests/test_bpf_collector.py: 1 warning
+tests/test_drain_bpf.py: 6 warnings
+tests/test_exclusion_purge.py: 1 warning
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'bglobal'
+    name = _assert_is_bytes(name)
+
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 4 warnings
+tests/test_drain_bpf.py: 6 warnings
+tests/test_exclusion_purge.py: 1 warning
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'bstate' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 7 warnings
+tests/test_bpf_collector.py: 1 warning
+tests/test_drain_bpf.py: 6 warnings
+tests/test_exclusion_purge.py: 1 warning
+  /usr/lib/python3/dist-packages/bcc/__init__.py:647: DeprecationWarning: not a bytes object: 'bigrams'
+    name = _assert_is_bytes(name)
+
+tests/test_agent_bigrams_bpf.py: 1 warning
+tests/test_bigrams_acceptance.py: 1 warning
+tests/test_bigrams_bpf.py: 5 warnings
+tests/test_drain_bpf.py: 6 warnings
+tests/test_exclusion_purge.py: 1 warning
+  /usr/lib/python3/dist-packages/bcc/__init__.py:639: DeprecationWarning: Due to '_pack_', the 'bkey' Structure will use memory layout compatible with MSVC (Windows). If this is intended, set _layout_ to 'ms'. The implicit default is deprecated and slated to become an error in Python 3.19.
+    cls = type(str(desc[0]), (base,), dict(_anonymous_=anon, _pack_=1,
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========= 89 passed, 591 deselected, 515 warnings in 678.42s (0:11:18) =========
+rc=0
+after: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+n/a mem_available_kb=6270980

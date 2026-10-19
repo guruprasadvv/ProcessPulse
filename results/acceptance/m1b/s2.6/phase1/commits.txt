@@ -1,0 +1,4 @@
+d1d7eac9aeb31d2ee9d58b94e6caa5cd3b086cdc feat(m1b): implement S2.5 final-drain protocol and double-read map accounting
+1f763de3d33fdead1cdf6225b12367b025986de5 fix(m1b): synchronize in-flight BPF readers before purge
+5f0d3762aa5d729aac50309c9b75a69f1184ccab feat(m1b): implement S2.1-S2.4 bounded syscall bigram storage and map accounting
+391c9889f193b728a77f9ab3cb82f82caadc546a refactor(m1b): implement S1 unified bpf compilation and per-thread lifecycle tracking

@@ -1,0 +1,104 @@
+{
+  "run_id": "s2.6-bigrams-20261019T132252",
+  "schema_version": 1,
+  "started_wall": 1792416175.2367873,
+  "duration_mono_ns": 46991342038,
+  "boot_id": "d3d9d84f-6498-45d4-a8e1-8ada436dbf40",
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.14.4",
+  "git_head": "d1d7eac9aeb31d2ee9d58b94e6caa5cd3b086cdc",
+  "config": {
+    "interval_ms": 500,
+    "duration_s": 30.0,
+    "use_bpf": true,
+    "collector": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/collector",
+    "max_procs": 16384
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  },
+  "counts": {
+    "samples": 61,
+    "snapshots": 62,
+    "failed_snapshots": 0
+  },
+  "resource_stats": {
+    "alive": false,
+    "epoch": 0,
+    "restarts": 0,
+    "last_exit_code": 0,
+    "schema_errors": 0,
+    "framing_errors": 0,
+    "dropped_samples": 0,
+    "samples": 61,
+    "lines": 2109,
+    "malformed_json": 0,
+    "invalid_utf8": 0,
+    "oversize_lines": 0,
+    "partial_tail": 0,
+    "not_object": 0
+  },
+  "output_schema": {
+    "resource": 1,
+    "health": 1,
+    "bpf": 2
+  },
+  "bpf_stream": {
+    "file": "bpf.jsonl",
+    "keyframe_interval": 60
+  },
+  "capabilities": [
+    "counts",
+    "bigrams"
+  ],
+  "bigrams": {
+    "mode": "ok",
+    "reason": null
+  },
+  "drain": {
+    "supervisor_stopped": true,
+    "status": "drained",
+    "drained": true,
+    "reason": null,
+    "final_snapshot": {
+      "seq": 61,
+      "status": "ok",
+      "drained": true,
+      "reason": null
+    },
+    "reads": 2,
+    "changed": [],
+    "still_attached": [],
+    "drain_ns": 896978234,
+    "accounting": {
+      "keys": 2,
+      "counts": 1831,
+      "pairs": 1831,
+      "pairs_lost": 0,
+      "orphan_entries": 0,
+      "orphan_pairs": 0,
+      "zero_entries": 0,
+      "reclaimed": {
+        "counts": 4464,
+        "pairs": 4464,
+        "pairs_lost": 0
+      },
+      "purged": {
+        "counts": 6,
+        "pairs": 4,
+        "pairs_lost": 2
+      },
+      "bigram_health": {
+        "bigram_dropped": 2,
+        "bigram_map_full": 0,
+        "thread_map_full": 0,
+        "pre_arm_events": 2,
+        "thread_slot_stale": 0,
+        "purged_counts": 6,
+        "purged_pairs": 4,
+        "purged_pairs_lost": 2
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+make test-privileged: after: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 bpf_progs_total=0
+e2e junit rc=0
+cli bigrams: agent rc=0 validate rc=0
+cli counts-v2: agent rc=0 validate rc=0
+cli default-v1: agent rc=0 validate rc=0
+equivalence: fields: current 34, baseline 34; identical 34; different 0 compare rc=0

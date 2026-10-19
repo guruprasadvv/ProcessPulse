@@ -93,6 +93,12 @@ class ResourceCollector:
         return p.pid if p is not None else None
 
     @property
+    def stopped(self):
+        """True when the supervisor thread is not running (never started, or ended),
+        so it can no longer spawn a collector or call on_spawn."""
+        return self._thread is None or not self._thread.is_alive()
+
+    @property
     def finished(self):
         return self._thread is not None and not self._thread.is_alive() and self._q.empty()
 

@@ -121,6 +121,85 @@ def bigram_state_truth(fake):
             for k, p in truth(fake).items()}
 
 
+class BigramCollectorFake(BigramFake):
+    """BigramFake with the BpfCollector interface the S2.6 emitter and agent use:
+    has_bigrams, ticks, last_bigrams (keyed (start_ns, tgid) as the real
+    collector keys them), bigram_health(), drain(), last_snapshot_drained,
+    exclude() and close(). drain_outcome is what drain() reports; after a
+    "drained" outcome exactly one snapshot is allowed, as in the real collector."""
+
+    has_bigrams = True
+    ticks = 100
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.bhealth = {"bigram_dropped": 0, "bigram_map_full": 0, "thread_map_full": 0,
+                        "pre_arm_events": 0, "thread_slot_stale": 0, "purged_counts": 0,
+                        "purged_pairs": 0, "purged_pairs_lost": 0}
+        self.last_bigrams = None
+        self.last_snapshot_drained = False
+        self.drain_outcome = "drained"
+        self.fail_health = False
+        self.change_after_drain = False   # the drained snapshot finds the maps changed
+        self.drain_calls = 0
+        self.closed = False
+        self.excluded = []
+        self.log = []                     # shared call log (agent ordering tests)
+        self._drained = False
+        self._drained_taken = False
+
+    @staticmethod
+    def start_ns(p):
+        return p["key"]["start_ticks"] * 10_000_000
+
+    def purge(self, tgid):
+        p = self.procs[tgid]
+        self.bhealth["purged_counts"] += sum(p["counts"].values())
+        self.bhealth["purged_pairs"] += sum(self.pairs[tgid].values())
+        self.bhealth["purged_pairs_lost"] += self.lost[tgid]
+        super().purge(tgid)
+
+    def snapshot(self, resource_seq=None):
+        self.last_snapshot_drained = False
+        drained = self._drained
+        if drained:
+            if self._drained_taken:
+                raise RuntimeError("the drained snapshot was taken: it is the epoch's last")
+            self._drained_taken = True
+            if self.change_after_drain:
+                raise RuntimeError("the maps changed after the drain: no drained snapshot")
+        snap = super().snapshot(resource_seq)
+        self.last_bigrams = {
+            "tables": {(self.start_ns(p), t): dict(self.pairs[t]) for t, p in self.procs.items()},
+            "pairs_lost": {(self.start_ns(p), t): self.lost[t] for t, p in self.procs.items()}}
+        self.last_snapshot_drained = drained
+        return snap
+
+    def bigram_health(self):
+        if self.fail_health:
+            raise OSError("injected health read failure")
+        return dict(self.bhealth)
+
+    def drain(self):
+        self.drain_calls += 1
+        self.log.append("drain")
+        ok = self.drain_outcome == "drained"
+        self._drained = ok
+        return {"status": self.drain_outcome, "drained": ok,
+                "reason": None if ok else f"injected {self.drain_outcome}", "detached": [],
+                "still_attached": [], "barrier": ok, "reads": 2 if ok else 0, "changed": [],
+                "detached_mono_ns": 1, "drain_ns": 5, "accounting": None}
+
+    def exclude(self, pid):
+        if self._drained or self.drain_calls:
+            raise RuntimeError("exclude() after drain(): the epoch's maps are final")
+        self.excluded.append(pid)
+
+    def close(self):
+        self.closed = True
+        self.log.append("close")
+
+
 class BigramStandIn:
     """Test-only producer of S2 bigram snapshots around the S0 V2Emitter.
 

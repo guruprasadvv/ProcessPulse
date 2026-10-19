@@ -1,0 +1,21 @@
+start_wall: 2026-10-19T13:07:13+00:00 uid=0 kernel=6.18.33.2-microsoft-standard-WSL2
+python: Python 3.14.4
+bpf_stats_enabled: 0
+mem_available_kb: 6245968
+cmd: python3 -m pytest tests/test_agent_bigrams_bpf.py -v -m privileged -W ignore::DeprecationWarning
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 2 items
+
+tests/test_agent_bigrams_bpf.py::test_agent_bigram_run_is_valid_drained_and_balanced PASSED [ 50%]
+tests/test_agent_bigrams_bpf.py::test_counts_only_schema2_run_keeps_the_s0_shape PASSED [100%]
+
+============================== 2 passed in 47.23s ==============================
+rc=0
+end_wall: 2026-10-19T13:08:02+00:00
+bpf_stats_enabled: 0
+ppc_cgroups: 0
+containers: 0

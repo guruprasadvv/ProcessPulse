@@ -1,0 +1,4 @@
+ERROR tests/test_agent_bigrams.py::test_an_error_during_collection_does_not_drain_and_cleans_up
+ERROR tests/test_agent_bigrams.py::test_unavailable_bigrams_are_null_with_an_error_and_never_drained
+ERROR tests/test_agent_bigrams.py::test_counts_only_schema2_run_has_no_drain_and_no_bigram_fields
+3 failed, 12 errors in 3.43s

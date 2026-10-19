@@ -1,0 +1,56 @@
+{
+  "run_id": "s2.6-counts-v2-20261019T132252",
+  "schema_version": 1,
+  "started_wall": 1792416228.4551797,
+  "duration_mono_ns": 26687170653,
+  "boot_id": "d3d9d84f-6498-45d4-a8e1-8ada436dbf40",
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.14.4",
+  "git_head": "d1d7eac9aeb31d2ee9d58b94e6caa5cd3b086cdc",
+  "config": {
+    "interval_ms": 500,
+    "duration_s": 10.0,
+    "use_bpf": true,
+    "collector": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/collector",
+    "max_procs": 16384
+  },
+  "syscall_stream": {
+    "available": true,
+    "reason": null
+  },
+  "counts": {
+    "samples": 21,
+    "snapshots": 21,
+    "failed_snapshots": 0
+  },
+  "resource_stats": {
+    "alive": false,
+    "epoch": 0,
+    "restarts": 0,
+    "last_exit_code": 0,
+    "schema_errors": 0,
+    "framing_errors": 0,
+    "dropped_samples": 0,
+    "samples": 21,
+    "lines": 693,
+    "malformed_json": 0,
+    "invalid_utf8": 0,
+    "oversize_lines": 0,
+    "partial_tail": 0,
+    "not_object": 0
+  },
+  "output_schema": {
+    "resource": 1,
+    "health": 1,
+    "bpf": 2
+  },
+  "bpf_stream": {
+    "file": "bpf.jsonl",
+    "keyframe_interval": 60
+  },
+  "capabilities": [
+    "counts"
+  ],
+  "bigrams": null,
+  "drain": null
+}

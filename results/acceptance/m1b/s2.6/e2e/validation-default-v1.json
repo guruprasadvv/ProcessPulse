@@ -1,0 +1,99 @@
+{
+  "run_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/s2.6-default-v1-20261019T140117",
+  "mode": "v1",
+  "files": {
+    "resource.jsonl": {
+      "lines": 695,
+      "valid": 695,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 384772,
+      "max_line_bytes": 610,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "898c0b9503b0f50438cb5eca25e14775da5cd0e55c88d03e8ec301b3ba2eb7b6"
+    },
+    "syscall.jsonl": {
+      "lines": 21,
+      "valid": 21,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 13848,
+      "max_line_bytes": 1998,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "533772d03ca8df730562c62bab937aa6b4e442646b9ce20132fe2c044c4a66e3"
+    },
+    "health.jsonl": {
+      "lines": 21,
+      "valid": 21,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 7749,
+      "max_line_bytes": 369,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "8d0a81c7b86fd43337a060f00c4c7a3fb847b65923f9049bfabefbd85fb69d57"
+    }
+  },
+  "errors": [],
+  "checks": {
+    "line_limits": {
+      "ok": true,
+      "policy": "v1: reported, not enforced"
+    },
+    "resource_framing": {
+      "ok": true,
+      "samples": 21,
+      "problems": []
+    },
+    "alignment": {
+      "ok": true,
+      "samples": 21,
+      "snapshots": 21,
+      "health": 21
+    },
+    "span": {
+      "ok": true,
+      "span_s": 10.003,
+      "required_s": 8.0
+    },
+    "collector_stream_clean": {
+      "ok": true,
+      "nonzero": {}
+    },
+    "schema": {
+      "ok": true
+    }
+  },
+  "line_limits": {
+    "max_record_bytes": 65536,
+    "legacy_v1_oversize": 0,
+    "legacy_v1_cr": 0,
+    "max_line_bytes": 1998
+  },
+  "loss_counters": {
+    "resource_dropped_samples": 0,
+    "resource_restarts": 0,
+    "proc_gone_total": 0,
+    "proc_denied_total": 0,
+    "proc_parse_errors_total": 0,
+    "proc_read_errors_total": 0,
+    "max_late_ms": 0.602,
+    "max_sample_dur_ms": 4.401,
+    "bpf_counts_map_full": 0,
+    "bpf_info_map_full": 0,
+    "bpf_unresolved_events": 1,
+    "bpf_self_excluded_events": 3345,
+    "bpf_exit_events": 0,
+    "bpf_reclaimed": 0,
+    "bpf_map_entries": 3,
+    "bpf_max_snapshot_ms": 2.671
+  },
+  "totals": {
+    "lines": 737,
+    "valid": 737,
+    "invalid": 0
+  },
+  "ok": true
+}

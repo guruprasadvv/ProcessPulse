@@ -1,0 +1,126 @@
+{
+  "run_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/s2.6-counts-v2-20261019T132252",
+  "mode": "v2",
+  "files": {
+    "resource.jsonl": {
+      "lines": 693,
+      "valid": 693,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 383145,
+      "max_line_bytes": 612,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "1e84bd97211a0fb04ec59f8753ce3e0ea3491933c62ded2a5755954e41203fef"
+    },
+    "bpf.jsonl": {
+      "lines": 42,
+      "valid": 42,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 21924,
+      "max_line_bytes": 540,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "d03411592bb90f7687bd95d0fe90b02c480f9b9f2ba1dc9da57c452ee6849969"
+    },
+    "health.jsonl": {
+      "lines": 21,
+      "valid": 21,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 7728,
+      "max_line_bytes": 368,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "e0db653415460e10de0b6dc8c623ed942e4cbf5df17f9af38582616975e1a251"
+    }
+  },
+  "errors": [],
+  "checks": {
+    "line_limits": {
+      "ok": true,
+      "policy": "v2: every line within the byte rule"
+    },
+    "resource_framing": {
+      "ok": true,
+      "samples": 21,
+      "problems": []
+    },
+    "final_snapshot": {
+      "ok": true,
+      "final_snapshot": null,
+      "policy": "resource_seq null only on the last snapshot (the drained snapshot)"
+    },
+    "snapshot_protocol": {
+      "ok": true,
+      "stats": {
+        "snapshots_complete": 21,
+        "snapshots_failed": 0,
+        "snapshots_incomplete": 0,
+        "keyframes": 1,
+        "framing_errors": 0,
+        "seq_gaps": 0,
+        "epoch_changes": 0,
+        "totals_mismatch": 0,
+        "invalidations": 0,
+        "keyframe_schedule_violations": 0,
+        "snapshots_after_drain": 0
+      },
+      "final_state_valid": true,
+      "tracked_at_end": 0,
+      "problems": []
+    },
+    "alignment": {
+      "ok": true,
+      "samples": 21,
+      "snapshots": 21,
+      "health": 21
+    },
+    "span": {
+      "ok": true,
+      "span_s": 10.005,
+      "required_s": 8.0
+    },
+    "collector_stream_clean": {
+      "ok": true,
+      "nonzero": {}
+    },
+    "schema": {
+      "ok": true
+    }
+  },
+  "line_limits": {
+    "max_record_bytes": 65536,
+    "legacy_v1_oversize": 0,
+    "legacy_v1_cr": 0,
+    "max_line_bytes": 612
+  },
+  "loss_counters": {
+    "resource_dropped_samples": 0,
+    "resource_restarts": 0,
+    "proc_gone_total": 0,
+    "proc_denied_total": 0,
+    "proc_parse_errors_total": 0,
+    "proc_read_errors_total": 0,
+    "max_late_ms": 0.264,
+    "max_sample_dur_ms": 9.664,
+    "bpf_failed_snapshots": 0,
+    "bpf_counts_map_full": 0,
+    "bpf_info_map_full": 0,
+    "bpf_vanished_entries": 0,
+    "bpf_unresolved_events": 4,
+    "bpf_self_excluded_events": 3288,
+    "bpf_exit_events": 0,
+    "bpf_reclaimed": 0,
+    "bpf_map_entries": 0,
+    "bpf_max_unreported_entries": 0,
+    "bpf_max_snapshot_ms": 0.758
+  },
+  "totals": {
+    "lines": 756,
+    "valid": 756,
+    "invalid": 0
+  },
+  "ok": true
+}

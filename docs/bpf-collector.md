@@ -100,8 +100,9 @@ Contract: `docs/telemetry-v2.md` §8 and the S2 design (R-LOSS, markers,
 I-B1–I-B5, approved as A8; decisions U2, U4, U5, U7, U9). Kernel side:
 `bpf/bigrams.bpf.c` plus `#ifdef PPC_CAP_BIGRAMS` hooks in
 `syscall_counter.bpf.c` and `core.bpf.c`. Userspace: `BpfCollector`
-(`capabilities=("counts", "bigrams")`). Records are not emitted yet; the
-emitter and the agent option are a later S2 step.
+(`capabilities=("counts", "bigrams")`). Records are emitted by
+`V2Emitter(bigrams="ok")` and the agent option `--capabilities
+counts,bigrams` (S2.6, `docs/telemetry-v2.md` §8.7).
 
 ### Maps and layouts
 
@@ -276,9 +277,10 @@ requires the barrier before any read or delete.
 
 ### Final drain (S2.5, decision U3)
 
-`drain()` ends the epoch with a stable read of every map. Before
-S2.6 nothing calls it; the S2.6 emitter will turn the drained snapshot into
-the end record's `drained: true`.
+`drain()` ends the epoch with a stable read of every map. The agent calls
+it at the normal end of a bigram run, after stopping the resource
+supervisor, and the emitter turns the drained snapshot into the end record's
+`drained: true` (S2.6, `docs/telemetry-v2.md` §8.7).
 
 **Steps:**
 1. **Detach** every tracepoint (BCC `detach_tracepoint`, syscall probes

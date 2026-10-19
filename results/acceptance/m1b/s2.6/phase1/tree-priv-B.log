@@ -1,0 +1,5 @@
+tree B (state of commit 2), as root: pytest tests/test_exclusion_purge.py tests/test_bigrams_bpf.py -m privileged
+........................                                                 [100%]
+24 passed in 131.18s (0:02:11)
+rc=0
+bpf_stats_enabled: 0
