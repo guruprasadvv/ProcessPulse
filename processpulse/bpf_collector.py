@@ -8,10 +8,12 @@ One start() performs exactly two BCC compilations, both recorded in
   2. "unified": ONE program assembled from bpf/common.h, the source of every
      enabled capability, bpf/core.bpf.c and the generated per-syscall probes,
      with -DPPC_CAP_<NAME> per capability.
-Capabilities: "counts" (the M1 syscall-entry counters, S1) and "bigrams"
+Capabilities: "counts" (the M1 syscall-entry counters, S1), "bigrams"
 (pairs of consecutive observed calls per thread, S2.3; requires "counts",
-adds no tracepoint). The names of later capabilities are reserved and
-refused until their stage.
+adds no tracepoint) and "net" (connect/accept tracking, S3.1/S3.2; requires
+"counts", adds the six connect/accept/accept4 entry and exit tracepoints;
+read_net(), net_health(), purge and reclaim of its entries, drain terms in
+drain_result["net_terms"]). "priv" is reserved and refused until its stage.
 
 With "bigrams" the program is armed right after attach (arm=True): entries
 before arming are counted but their pairs are lost and counted (U2a).
@@ -47,13 +49,14 @@ Requires root and BCC (python3-bpfcc); see processpulse.preflight.
 """
 
 import ctypes
+import json
 import os
 import platform
 import threading
 import time
 
 from .identity import CgroupResolver, clk_tck, own_pidns_ino, read_boot_id, start_ticks_from_ns
-from .vocab import VOCABULARY
+from .vocab import NET_HOOK_FIELDS, NET_SYSCALLS, VOCABULARY
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BPF_DIR = os.path.join(REPO_ROOT, "bpf")
@@ -77,10 +80,16 @@ CAPABILITIES = {
     "counts": ("syscall_counter.bpf.c", "PPC_CAP_COUNTS",
                tuple(f"syscalls:sys_enter_{s}" for s in SYSCALLS)),
     "bigrams": ("bigrams.bpf.c", "PPC_CAP_BIGRAMS", ()),
+    "net": ("net.bpf.c", "PPC_CAP_NET",
+            tuple(f"syscalls:sys_{d}_{s}" for s in NET_SYSCALLS for d in ("enter", "exit"))),
 }
-REQUIRES = {"bigrams": ("counts",)}                    # U9
-SOURCE_ORDER = ("bigrams", "counts")                   # the counter calls the bigram hooks
-RESERVED_CAPABILITIES = ("priv", "net")                # later M1b stages
+REQUIRES = {"bigrams": ("counts",), "net": ("counts",)}   # U9, N3
+# The counter calls the bigram hooks; net uses the counts/info maps and is
+# called by core.bpf.c, so it follows the counter.
+SOURCE_ORDER = ("bigrams", "counts", "net")
+RESERVED_CAPABILITIES = ("priv",)                      # a later M1b stage
+NET_DEFAULT_MAX = 32768        # netc entries (process, class) and stash slots (N4)
+NNHEALTH = len(NET_SYSCALLS) * len(NET_HOOK_FIELDS) + 1   # bpf/net.bpf.c NNHEALTH
 
 SYS_GETPID = {"x86_64": 39, "aarch64": 172}
 SYS_MEMBARRIER = {"x86_64": 324, "aarch64": 283}
@@ -194,6 +203,14 @@ def calibrate(compilations=None):
         b.cleanup()
 
 
+def _net_values(v):
+    """A netc value (struct ncnt) as the processpulse.net.RAW_FIELDS tuple."""
+    return (tuple(v.entry[i] for i in range(len(NET_SYSCALLS)))
+            + (v.connect_ok, v.connect_pending, v.connect_refused, v.connect_err,
+               v.accept_ok, v.accept_err)
+            + tuple(v.dest[i] for i in range(6)))
+
+
 def _tp_name(tp):
     """'category:event' of a BCC tracepoint_fds key (BCC may use bytes)."""
     return tp.decode() if isinstance(tp, bytes) else tp
@@ -206,12 +223,23 @@ def family_totals(counts):
 class BpfCollector:
     def __init__(self, capabilities=("counts",), max_procs=16384, max_threads=32768,
                  distro_inum_override=None, resolver=None, track_removals=False,
-                 max_pairs=131072, arm=True):
+                 max_pairs=131072, arm=True, max_net=NET_DEFAULT_MAX,
+                 max_net_stash=NET_DEFAULT_MAX):
         self.capabilities = check_capabilities(capabilities)
         self.has_bigrams = "bigrams" in self.capabilities
+        self.has_net = "net" in self.capabilities
         self.max_procs = max_procs
         self.max_threads = max_threads
         self.max_pairs = max_pairs
+        self.max_net = max_net
+        self.max_net_stash = max_net_stash
+        # net: what self-exclusion purges and exit reclaims removed (I-N2/I-N4 terms)
+        self.purged_net = {"entry": dict.fromkeys(NET_SYSCALLS, 0),
+                           "results": {"connect": 0, "accept": 0},
+                           "stash": dict.fromkeys(NET_SYSCALLS, 0)}
+        self.reclaimed_net = {"entry": dict.fromkeys(NET_SYSCALLS, 0), "connect_results": 0,
+                              "accept_results": 0}
+        self.last_net = None       # net: read_net() result of the last snapshot()
         self._arm_at_start = arm
         self.armed_boot_ns = None
         self.purged = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: self-exclusion purges
@@ -249,6 +277,8 @@ class BpfCollector:
                   f"-DNSYSCALLS={len(SYSCALLS)}"]
         if self.has_bigrams:
             cflags.append(f"-DMAX_PAIRS={self.max_pairs}")
+        if self.has_net:
+            cflags += [f"-DMAX_NET={self.max_net}", f"-DMAX_NET_STASH={self.max_net_stash}"]
         cflags += [f"-D{CAPABILITIES[c][1]}=1" for c in self.capabilities]
         t0 = time.monotonic_ns()
         self.b = BPF(text=build_source(self.capabilities), cflags=cflags)
@@ -300,6 +330,8 @@ class BpfCollector:
                 "max_threads": self.max_threads}
         if self.has_bigrams:
             info.update({"max_pairs": self.max_pairs, "armed_boot_ns": self.armed_boot_ns})
+        if self.has_net:
+            info.update({"max_net": self.max_net, "max_net_stash": self.max_net_stash})
         if self.b is not None:
             info["maps"] = self.map_memory()
         return info
@@ -308,7 +340,8 @@ class BpfCollector:
         """Per map: max_entries and memlock (bytes) from /proc/self/fdinfo, or None
         where the kernel does not report the field (hypothesis H-MEMLOCK)."""
         out = {}
-        for name in ("counts", "info", "threads", "excluded", "health", "bigrams", "bglobal"):
+        for name in ("counts", "info", "threads", "excluded", "health", "bigrams", "bglobal",
+                     "netc", "net_stash", "nhealth"):
             try:
                 fd = self.b[name].map_fd
             except KeyError:
@@ -376,12 +409,42 @@ class BpfCollector:
                         del pairs_t[k]
                     except KeyError:
                         pass
+        if self.has_net:
+            self._purge_net(tgid)
         for tid, s in list(threads_t.items()):
             if s.proc.tgid == tgid:
                 try:
                     del threads_t[tid]
                 except KeyError:
                     pass
+
+    def _purge_net(self, tgid):
+        """Part of _exclude(), after the barrier: deletes tgid's netc entries and
+        stash slots, adding what they held to purged_net (I-N2/I-N4 purge terms).
+        A slot is counted only if this delete removed it (the thread-exit hook
+        may delete it concurrently and count it as orphaned)."""
+        netc, stash = self.b["netc"], self.b["net_stash"]
+        for k, v in list(netc.items()):
+            if k.proc.tgid != tgid:
+                continue
+            raw = _net_values(v)
+            for i, sc in enumerate(NET_SYSCALLS):
+                self.purged_net["entry"][sc] += raw[i]
+            self.purged_net["results"]["connect"] += sum(raw[3:7])
+            self.purged_net["results"]["accept"] += sum(raw[7:9])
+            try:
+                del netc[k]
+            except KeyError:
+                pass
+        for tid, s in list(stash.items()):
+            if s.proc.tgid != tgid:
+                continue
+            try:
+                del stash[tid]
+            except KeyError:
+                continue
+            if s.sc < len(NET_SYSCALLS):
+                self.purged_net["stash"][NET_SYSCALLS[s.sc]] += 1
 
     def unexclude(self, tgid):
         try:
@@ -504,6 +567,70 @@ class BpfCollector:
         are dropped (P-ZERO) and counted; they are not loss."""
         return self._read_bigrams_raw()[0]
 
+    # --- net (S3.1/S3.2) ------------------------------------------------------
+    def _net_items(self):
+        table = self.b["netc"]
+        try:
+            return list(table.items_lookup_batch())
+        except Exception:                         # H-BATCH fallback, as for the bigrams
+            return list(table.items())
+
+    def _read_net_raw(self):
+        """(result, raw): per process (start_ns, tgid) the decoded net object
+        (processpulse.net), and its raw netc keys (for deletion). Every process
+        with a counts entry gets an object (empty if it never touched a socket).
+        Reads are sequential, not atomic."""
+        from .net import decode_entries, empty_net
+        if not self.has_net:
+            raise RuntimeError("read_net() needs the net capability")
+        items = self._net_items()
+        keys = {(k.start_ns, k.tgid) for k in self.b["counts"].keys()}
+        raw = {}
+        for k, v in items:
+            raw.setdefault((k.proc.start_ns, k.proc.tgid), []).append((k.cls, _net_values(v), k))
+        nets = {key: empty_net() for key in keys}
+        orphans = 0
+        for key, entries in raw.items():
+            if key in keys:
+                nets[key] = decode_entries([(c, vals) for c, vals, _k in entries])
+            else:
+                orphans += len(entries)            # no counts entry: not a reported process
+        return {"nets": nets, "orphan_entries": orphans, "entries": len(items)}, raw
+
+    def read_net(self):
+        """{"nets": {(start_ns, tgid): net object}, "orphan_entries", "entries"}."""
+        return self._read_net_raw()[0]
+
+    def _nhealth_raw(self):
+        h = self.b["nhealth"]
+        return [h[ctypes.c_int(i)].value for i in range(NNHEALTH)]
+
+    def _stash_live(self):
+        live = dict.fromkeys(NET_SYSCALLS, 0)
+        for _tid, s in self.b["net_stash"].items():
+            if s.sc < len(NET_SYSCALLS):
+                live[NET_SYSCALLS[s.sc]] += 1
+        return live
+
+    def _net_health_from(self, raw, stash_live, purged):
+        nf = len(NET_HOOK_FIELDS)
+        hooks = {}
+        for i, sc in enumerate(NET_SYSCALLS):
+            x = dict(zip(NET_HOOK_FIELDS, raw[i * nf:(i + 1) * nf]))
+            x["purged_entry"] = purged["entry"][sc]
+            x["purged_results"] = purged["results"].get(sc, 0)    # accept4 pooled in accept
+            x["purged_stash"] = purged["stash"][sc]
+            x["stash_live"] = stash_live[sc]
+            hooks[sc] = x
+        return {"hooks": hooks, "net_map_full": raw[len(NET_SYSCALLS) * nf]}
+
+    def net_health(self):
+        """The bpf_snapshot_end.net_health fields (cumulative): per stashed syscall
+        the R-NLOSS counters, the purge terms and the stash slots in use."""
+        if not self.has_net:
+            raise RuntimeError("net_health() needs the net capability")
+        return self._net_health_from(self._nhealth_raw(), self._stash_live(), self.purged_net)
+
     # --- final drain (S2.5, U3) ----------------------------------------------
     def drain(self):
         """Ends the epoch with a stable final read of every map (U3, H-DRAIN):
@@ -589,6 +716,8 @@ class BpfCollector:
         self._drain_state = first
         if self.has_bigrams:
             res["accounting"] = self._drain_accounting(first)
+        if self.has_net:
+            res["net_terms"] = self._net_terms(first)
         return None
 
     def _read_state(self):
@@ -616,7 +745,41 @@ class BpfCollector:
             state["bglobal"] = (g.armed_boot_ns, g.last_thread_full_ns, g.armed)
             state["userspace"].update(purged=dict(self.purged),
                                       reclaimed_totals=dict(self.reclaimed_totals))
+        if self.has_net:
+            state["netc"] = sorted(((k.proc.start_ns, k.proc.tgid, k.cls), _net_values(v))
+                                   for k, v in self._net_items())
+            state["net_stash"] = sorted((tid.value, (s.thread_start_ns, s.proc.start_ns,
+                                                     s.proc.tgid, s.sc, s.cls, s.dest))
+                                        for tid, s in self.b["net_stash"].items())
+            state["nhealth"] = tuple(self._nhealth_raw())
+            state["userspace"].update(
+                purged_net=json.loads(json.dumps(self.purged_net)),
+                reclaimed_net=json.loads(json.dumps(self.reclaimed_net)))
         return state
+
+    def _net_terms(self, state):
+        """The I-N2/I-N4 terms of a stable read (net): recorded = live netc
+        entries of keys with a counts entry + the reclaim totals (copies); hook
+        counters, purge terms and stash slots left from the same read."""
+        live_keys = {key for key, _vals in state["counts"]}
+        rec = json.loads(json.dumps(state["userspace"]["reclaimed_net"]))
+        orphans = 0
+        for (start, tgid, _cls), raw in state["netc"]:
+            if (start, tgid) not in live_keys:
+                orphans += 1
+                continue
+            for i, sc in enumerate(NET_SYSCALLS):
+                rec["entry"][sc] += raw[i]
+            rec["connect_results"] += sum(raw[3:7])
+            rec["accept_results"] += sum(raw[7:9])
+        stash_live = dict.fromkeys(NET_SYSCALLS, 0)
+        for _tid, (_ts, _start, _tgid, sc, _cls, _dest) in state["net_stash"]:
+            if sc < len(NET_SYSCALLS):
+                stash_live[NET_SYSCALLS[sc]] += 1
+        health = self._net_health_from(list(state["nhealth"]), stash_live,
+                                       state["userspace"]["purged_net"])
+        return {"drained": True, "recorded": rec, "hooks": health["hooks"],
+                "net_map_full": health["net_map_full"], "orphan_entries": orphans}
 
     def _drain_accounting(self, state):
         """The I-B2 terms of a stable read (bigrams). Live terms come from the maps;
@@ -653,12 +816,19 @@ class BpfCollector:
         raw = {}
         for (start, tgid, a, b), value in st.get("bigrams", ()):
             raw.setdefault((start, tgid), []).append((a, b, value))
+        nraw = {}
+        for (start, tgid, cls), vals in st.get("netc", ()):
+            nraw.setdefault((start, tgid), []).append((cls, vals))
         out = {}
         for key, vals in st["counts"]:
             table = decode_entries(raw.get(key, []))[0] if self.has_bigrams else {}
-            out[key] = ({"counts": dict(zip(SYSCALLS, vals[:n])),
-                         "pairs_lost": vals[n] if self.has_bigrams else None,
-                         "exited": exited.get(key)}, table)
+            proc = {"counts": dict(zip(SYSCALLS, vals[:n])),
+                    "pairs_lost": vals[n] if self.has_bigrams else None,
+                    "exited": exited.get(key)}
+            if self.has_net:
+                from .net import decode_entries as decode_net
+                proc["net"] = decode_net(nraw.get(key, []))
+            out[key] = (proc, table)
         return out
 
     # --- snapshot (schema v1, unchanged from M1) ---------------------------
@@ -693,6 +863,16 @@ class BpfCollector:
                         sum(bg["tables"].get(key, {}).values()))
         else:
             fingerprint = counts.get
+        raw_net = {}
+        if self.has_net:
+            self.last_net, raw_net = self._read_net_raw()
+            base = fingerprint
+
+            def fingerprint(key):              # plus every net counter of the key (S3)
+                cur = base(key)
+                if cur is None:
+                    return None
+                return (cur, tuple(sorted((c, vals) for c, vals, _k in raw_net.get(key, ()))))
 
         # Phase 2 of exit handling: reclaim entries reported as exited last time
         # whose values have not changed since (so no increment is lost).
@@ -718,6 +898,19 @@ class BpfCollector:
                             pass
                     self.last_bigrams["tables"].pop(key, None)
                     self.last_bigrams["pairs_lost"].pop(key, None)
+                if self.has_net:
+                    netc = self.b["netc"]
+                    for _c, vals, nk in raw_net.get(key, ()):
+                        if cur is not None:  # the values removed, unchanged since the exit report
+                            for i, sc in enumerate(NET_SYSCALLS):
+                                self.reclaimed_net["entry"][sc] += vals[i]
+                            self.reclaimed_net["connect_results"] += sum(vals[3:7])
+                            self.reclaimed_net["accept_results"] += sum(vals[7:9])
+                        try:
+                            del netc[nk]
+                        except KeyError:
+                            pass
+                    self.last_net["nets"].pop(key, None)
                 counts.pop(key, None)
                 infos.pop(key, None)
                 del self._reported_exit[key]

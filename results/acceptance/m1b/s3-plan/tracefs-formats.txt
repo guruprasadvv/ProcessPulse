@@ -1,0 +1,153 @@
+kernel: 6.18.33.2-microsoft-standard-WSL2  tracefs: /sys/kernel/tracing  date: 2026-10-19T13:53:32+00:00
+== sock/sock_send_length
+field:void * sk;	offset:8;	size:8;	signed:0;
+field:__u16 family;	offset:16;	size:2;	signed:0;
+field:__u16 protocol;	offset:18;	size:2;	signed:0;
+field:int ret;	offset:20;	size:4;	signed:1;
+field:int flags;	offset:24;	size:4;	signed:1;
+== sock/sock_recv_length
+field:void * sk;	offset:8;	size:8;	signed:0;
+field:__u16 family;	offset:16;	size:2;	signed:0;
+field:__u16 protocol;	offset:18;	size:2;	signed:0;
+field:int ret;	offset:20;	size:4;	signed:1;
+field:int flags;	offset:24;	size:4;	signed:1;
+== sock/inet_sock_set_state
+field:const void * skaddr;	offset:8;	size:8;	signed:0;
+field:int oldstate;	offset:16;	size:4;	signed:1;
+field:int newstate;	offset:20;	size:4;	signed:1;
+field:__u16 sport;	offset:24;	size:2;	signed:0;
+field:__u16 dport;	offset:26;	size:2;	signed:0;
+field:__u16 family;	offset:28;	size:2;	signed:0;
+field:__u16 protocol;	offset:30;	size:2;	signed:0;
+field:__u8 saddr[4];	offset:32;	size:4;	signed:0;
+field:__u8 daddr[4];	offset:36;	size:4;	signed:0;
+field:__u8 saddr_v6[16];	offset:40;	size:16;	signed:0;
+field:__u8 daddr_v6[16];	offset:56;	size:16;	signed:0;
+== sock/inet_sk_error_report
+field:int error;	offset:8;	size:4;	signed:1;
+field:__u16 sport;	offset:12;	size:2;	signed:0;
+field:__u16 dport;	offset:14;	size:2;	signed:0;
+field:__u16 family;	offset:16;	size:2;	signed:0;
+field:__u16 protocol;	offset:18;	size:2;	signed:0;
+field:__u8 saddr[4];	offset:20;	size:4;	signed:0;
+field:__u8 daddr[4];	offset:24;	size:4;	signed:0;
+field:__u8 saddr_v6[16];	offset:28;	size:16;	signed:0;
+field:__u8 daddr_v6[16];	offset:44;	size:16;	signed:0;
+== syscalls/sys_enter_sendto
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:void * buff;	offset:24;	size:8;	signed:0;
+field:size_t len;	offset:32;	size:8;	signed:0;
+field:unsigned int flags;	offset:40;	size:8;	signed:0;
+field:struct sockaddr * addr;	offset:48;	size:8;	signed:0;
+field:int addr_len;	offset:56;	size:8;	signed:0;
+== syscalls/sys_exit_sendto
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:long ret;	offset:16;	size:8;	signed:1;
+== syscalls/sys_enter_recvfrom
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:void * ubuf;	offset:24;	size:8;	signed:0;
+field:size_t size;	offset:32;	size:8;	signed:0;
+field:unsigned int flags;	offset:40;	size:8;	signed:0;
+field:struct sockaddr * addr;	offset:48;	size:8;	signed:0;
+field:int * addr_len;	offset:56;	size:8;	signed:0;
+== syscalls/sys_exit_recvfrom
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:long ret;	offset:16;	size:8;	signed:1;
+== syscalls/sys_enter_sendmsg
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct user_msghdr * msg;	offset:24;	size:8;	signed:0;
+field:unsigned int flags;	offset:32;	size:8;	signed:0;
+== syscalls/sys_enter_sendmmsg
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct mmsghdr * mmsg;	offset:24;	size:8;	signed:0;
+field:unsigned int vlen;	offset:32;	size:8;	signed:0;
+field:unsigned int flags;	offset:40;	size:8;	signed:0;
+== syscalls/sys_enter_recvmsg
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct user_msghdr * msg;	offset:24;	size:8;	signed:0;
+field:unsigned int flags;	offset:32;	size:8;	signed:0;
+== syscalls/sys_enter_recvmmsg
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct mmsghdr * mmsg;	offset:24;	size:8;	signed:0;
+field:unsigned int vlen;	offset:32;	size:8;	signed:0;
+field:unsigned int flags;	offset:40;	size:8;	signed:0;
+field:struct __kernel_timespec * timeout;	offset:48;	size:8;	signed:0;
+== syscalls/sys_enter_connect
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct sockaddr * uservaddr;	offset:24;	size:8;	signed:0;
+field:int addrlen;	offset:32;	size:8;	signed:0;
+== syscalls/sys_exit_connect
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:long ret;	offset:16;	size:8;	signed:1;
+== syscalls/sys_enter_accept4
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct sockaddr * upeer_sockaddr;	offset:24;	size:8;	signed:0;
+field:int * upeer_addrlen;	offset:32;	size:8;	signed:0;
+field:int flags;	offset:40;	size:8;	signed:0;
+== syscalls/sys_exit_accept4
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:long ret;	offset:16;	size:8;	signed:1;
+== syscalls/sys_enter_accept
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd;	offset:16;	size:8;	signed:0;
+field:struct sockaddr * upeer_sockaddr;	offset:24;	size:8;	signed:0;
+field:int * upeer_addrlen;	offset:32;	size:8;	signed:0;
+== syscalls/sys_enter_socket
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int family;	offset:16;	size:8;	signed:0;
+field:int type;	offset:24;	size:8;	signed:0;
+field:int protocol;	offset:32;	size:8;	signed:0;
+== syscalls/sys_exit_socket
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:long ret;	offset:16;	size:8;	signed:1;
+== syscalls/sys_enter_write
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:unsigned int fd;	offset:16;	size:8;	signed:0;
+field:const char * buf;	offset:24;	size:8;	signed:0;
+field:size_t count;	offset:32;	size:8;	signed:0;
+== syscalls/sys_enter_sendfile64
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int out_fd;	offset:16;	size:8;	signed:0;
+field:int in_fd;	offset:24;	size:8;	signed:0;
+field:loff_t * offset;	offset:32;	size:8;	signed:0;
+field:size_t count;	offset:40;	size:8;	signed:0;
+== syscalls/sys_enter_splice
+field:int __syscall_nr;	offset:8;	size:4;	signed:1;
+field:int fd_in;	offset:16;	size:8;	signed:0;
+field:loff_t * off_in;	offset:24;	size:8;	signed:0;
+field:int fd_out;	offset:32;	size:8;	signed:0;
+field:loff_t * off_out;	offset:40;	size:8;	signed:0;
+field:size_t len;	offset:48;	size:8;	signed:0;
+field:unsigned int flags;	offset:56;	size:8;	signed:0;
+== tcp/tcp_retransmit_skb
+field:const void * skbaddr;	offset:8;	size:8;	signed:0;
+field:const void * skaddr;	offset:16;	size:8;	signed:0;
+field:int state;	offset:24;	size:4;	signed:1;
+field:__u16 sport;	offset:28;	size:2;	signed:0;
+field:__u16 dport;	offset:30;	size:2;	signed:0;
+field:__u16 family;	offset:32;	size:2;	signed:0;
+field:__u8 saddr[4];	offset:34;	size:4;	signed:0;
+field:__u8 daddr[4];	offset:38;	size:4;	signed:0;
+field:__u8 saddr_v6[16];	offset:42;	size:16;	signed:0;
+field:__u8 daddr_v6[16];	offset:58;	size:16;	signed:0;
+field:int err;	offset:76;	size:4;	signed:1;
+== kallsyms (sock_sendmsg / sock_recvmsg / tcp_connect / inet_stream_connect):
+T __sys_connect
+T inet_stream_connect
+T sock_recvmsg
+T sock_sendmsg
+T tcp_connect
+T tcp_v4_connect
+t tcp_v6_connect
+== exit tracepoints (added check)
+sys_exit_accept: present: field:int __syscall_nr;	offset:8;	size:4;	signed:1; field:long ret;	offset:16;	size:8;	signed:1; 
+sys_exit_sendmsg: present: field:int __syscall_nr;	offset:8;	size:4;	signed:1; field:long ret;	offset:16;	size:8;	signed:1; 
+sys_exit_recvmsg: present: field:int __syscall_nr;	offset:8;	size:4;	signed:1; field:long ret;	offset:16;	size:8;	signed:1; 

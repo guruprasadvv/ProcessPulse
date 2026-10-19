@@ -359,3 +359,115 @@ in the purge audit):**
 they add to their totals, and the drain's `accounting` copies those totals
 at the stable read, so every key is in exactly one I-B2 term (tested: a
 reclaim after the drain does not count a key twice).
+
+## Network capability (M1b S3.1/S3.2)
+
+Contract: `docs/m1b-s3-network-plan.md` (N1–N10 approved) and
+`docs/telemetry-v2.md` §9.
+- **Source:** `bpf/net.bpf.c`, flag `PPC_CAP_NET`, assembled after
+  `syscall_counter.bpf.c` and before `core.bpf.c`.
+- **Requires `counts` (N3).** A network event creates the process's `counts`
+  and `info` entries, so a process that only uses sockets is still reported.
+  Its zero counts are measured zeros.
+- **S3.2 scope:** `connect()`, `accept()`, `accept4()`. Bytes, send/receive
+  and `inet_sock_set_state` are S3.3.
+
+**Hooks (tracepoints only, N2):** `syscalls:sys_{enter,exit}_{connect,accept,accept4}`.
+- A `net` build attaches 17 tracepoints (the 11 of S1 plus 6) and still
+  compiles 2 programs per start.
+- The formats on this kernel give `fd`, `uservaddr`, `addrlen` (connect
+  entry); `fd` and an output peer pointer (accept entries); `ret` (exits)
+  (`results/acceptance/m1b/s3.2/tracefs-formats.txt`).
+
+**Class from the socket, read inside the tracepoint.** No tracepoint field
+carries the socket's family or protocol.
+- The class is read from the socket behind the fd: `task->files->fdt->fd[fd]`
+  → `file` (`f_inode->i_mode` must be `S_IFSOCK`) → `private_data` (`struct
+  socket`) → `sk` → `skc_family`, `sk_protocol`.
+- These are `bpf_probe_read_kernel` reads inside the approved tracepoint
+  programs, like `resolve()`: no kprobe and no other hook type.
+- Programs run under `rcu_read_lock()`, so the RCU-protected fd table can be
+  read.
+- If any step fails, or the fd is not a socket, the class is `unknown`.
+- The class is read at entry. Another thread closing and reusing the fd
+  during the syscall could misclassify it; a read error cannot crash the
+  probe.
+
+**Destination class (connect only, IP classes):**
+- From the user sockaddr, the probe reads only the family (offset 0) and the
+  address bytes (IPv4 offset 4, IPv6 offset 8, length-checked against
+  `addrlen`). The port is never read.
+- The address lives only in locals; the stash and the map keep a class code.
+- Classes (`vocab.NET_DEST_CLASSES`):
+  - `loopback`: 127/8, ::1;
+  - `private`: 10/8, 172.16/12, 192.168/16, fc00::/7;
+  - `link_local`: 169.254/16, fe80::/10;
+  - `special`: 0/8, 224/4, 240/4 (broadcast included), ::, ff00::/8;
+  - `public`: every other address (100.64/10 and documentation ranges
+    included);
+  - `unknown`: unreadable, too short, or not AF_INET/AF_INET6, e.g.
+    AF_UNSPEC.
+- IPv4-mapped IPv6 addresses are classified by their IPv4 part.
+
+**Maps:**
+
+| Map | Key | Value | Capacity | Measured memlock |
+|---|---|---|---|---|
+| `netc` | `struct nkey {pkey; u16 cls; u16 pad1; u32 pad2}` (24 B) | `struct ncnt`: `entry[3]` (used in the `unknown` entry only), 6 results, `dest[6]` (15 × u64) | `max_net` = 32,768 | 6,820,288 B (6.50 MiB) |
+| `net_stash` | host TID (u32) | `{u64 thread_start_ns; pkey proc; u16 sc, cls, dest, pad}` (32 B) | `max_net_stash` = 32,768 | 3,410,752 B (3.25 MiB) |
+| `nhealth` (array) | 0..42 | u64: 14 fields × 3 syscalls + `net_map_full` | 43 | 648 B |
+
+A `counts,net` build adds 9.75 MiB of map memory. The memlock values were
+measured with fdinfo (`results/acceptance/m1b/s3.2/verifier-*.txt`).
+
+**R-NLOSS (`nhealth`, per syscall).**
+
+Entry:
+1. `seen_enter`;
+2. `unresolved_enter`, or `excluded_enter`, then stop;
+3. if the `counts`/`info`/`netc` entry cannot be created: `dropped_enter` and
+   `net_map_full`, then stop;
+4. `entry_observed` += 1, then `stash_entries`;
+5. if an entry of the same thread is still in the stash: `stash_overwrite`;
+   if it belongs to an earlier owner of the TID (start time differs):
+   `stash_orphaned`. Either way it is replaced;
+6. if the stash update fails: `stash_full`.
+
+Exit:
+1. `seen_exit`;
+2. `unresolved_exit`, or `excluded_exit`, then stop;
+3. no entry, or an entry of another thread or syscall: `exit_without_entry`
+   (the stale entry: `stash_orphaned`);
+4. otherwise `matched`, and the result is recorded in the class
+   (`connect_ok` / `_pending` (`-EINPROGRESS`) / `_refused` (`-ECONNREFUSED`)
+   / `_err`; `accept_ok` (`ret` >= 0) / `accept_err`), with the destination
+   class for a connect on an IP socket. If the entry cannot be created:
+   `dropped_exit` and `net_map_full`.
+
+A thread exit (the `sched_process_exit` hook) deletes its stash entry
+(`stash_orphaned`). A failed connect is never counted as a connection.
+
+**Userspace:**
+- **Reading:** `read_net()` decodes the map (`processpulse.net`); every
+  process with a counts entry gets an object.
+- **Exit reclaim:** the reclaim fingerprint includes every net counter, the
+  key's `netc` entries are deleted, and their values go to `reclaimed_net`.
+- **Purge:** `exclude()` purges `netc` and stash entries after the barrier
+  (`purged_net`; a stash entry counts only if this delete removed it).
+- **Health:** `net_health()` returns the hook counters plus the purge terms
+  and `stash_live`.
+- **Drain:** `drain()` reads `netc`, `net_stash` and `nhealth` and returns
+  `net_terms` (I-N2/I-N4 terms); the drained snapshot is cross-checked over
+  them too.
+
+**Verifier.**
+- `counts,net`: 17 programs, 160–1,033 instructions processed each; the
+  net probes are 393–700.
+- `counts,bigrams,net`: 413–1,035.
+- At most 81 states, against the 1,000,000-instruction limit.
+
+**Build note.** `<net/sock.h>` pulls the kernel's internal `linux/bpf.h`.
+That header takes the size of `struct bpf_task_work`, which BCC 0.35's
+bundled uapi header lacks. `net.bpf.c` declares it exactly as in the running
+kernel's uapi header (tag `linux-msft-wsl-6.18.33.2`); the program never uses
+the type.

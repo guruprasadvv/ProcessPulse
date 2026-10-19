@@ -1,0 +1,8 @@
+uptime: 346.39 5260.49
+mem_available_kb: 6242644  mem_total_kb: 7026332
+--- leftover test processes:
+none
+--- processes holding bpf-prog / perf_event fds:
+1 /sbin/init  progs=14 perf=0
+(end)
+bpf_stats_enabled=0 ppc_cgroups=0 containers=0 networks=3

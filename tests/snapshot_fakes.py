@@ -129,10 +129,17 @@ class BigramCollectorFake(BigramFake):
     "drained" outcome exactly one snapshot is allowed, as in the real collector."""
 
     has_bigrams = True
+    has_net = False            # set True to also act as a net-capable collector (S3)
     ticks = 100
 
     def __init__(self, **kw):
         super().__init__(**kw)
+        self.nets = {}                    # tgid -> net object (processpulse.net format)
+        self.last_net = None
+        from processpulse.vocab import NET_HOOK_FIELDS, NET_SYSCALLS
+        hook = dict.fromkeys(NET_HOOK_FIELDS + ("purged_entry", "purged_results", "purged_stash",
+                                                "stash_live"), 0)
+        self.nhealth = {"hooks": {sc: dict(hook) for sc in NET_SYSCALLS}, "net_map_full": 0}
         self.bhealth = {"bigram_dropped": 0, "bigram_map_full": 0, "thread_map_full": 0,
                         "pre_arm_events": 0, "thread_slot_stale": 0, "purged_counts": 0,
                         "purged_pairs": 0, "purged_pairs_lost": 0}
@@ -157,6 +164,13 @@ class BigramCollectorFake(BigramFake):
         self.bhealth["purged_counts"] += sum(p["counts"].values())
         self.bhealth["purged_pairs"] += sum(self.pairs[tgid].values())
         self.bhealth["purged_pairs_lost"] += self.lost[tgid]
+        if tgid in self.nets:
+            from processpulse.net import sums
+            entries, connect, accept = sums(self.nets.pop(tgid))
+            for sc, v in entries.items():
+                self.nhealth["hooks"][sc]["purged_entry"] += v
+            self.nhealth["hooks"]["connect"]["purged_results"] += connect
+            self.nhealth["hooks"]["accept"]["purged_results"] += accept
         super().purge(tgid)
 
     def snapshot(self, resource_seq=None):
@@ -172,8 +186,25 @@ class BigramCollectorFake(BigramFake):
         self.last_bigrams = {
             "tables": {(self.start_ns(p), t): dict(self.pairs[t]) for t, p in self.procs.items()},
             "pairs_lost": {(self.start_ns(p), t): self.lost[t] for t, p in self.procs.items()}}
+        if self.has_net:
+            from processpulse.net import empty_net
+            self.last_net = {"nets": {(self.start_ns(p), t): copy.deepcopy(self.nets.get(t) or empty_net())
+                                      for t, p in self.procs.items()}}
         self.last_snapshot_drained = drained
         return snap
+
+    def net_health(self):
+        return copy.deepcopy(self.nhealth)
+
+    def net_event(self, tgid, op, cls, result, dest=None, n=1):
+        """n observed connect/accept calls of tgid (entry and matched exit) with the
+        R-NLOSS hook counters they imply."""
+        from processpulse.net import empty_net, expected_net, merge
+        step = (op, cls, dest, result) if op == "connect" else (op, cls, result)
+        self.nets[tgid] = merge(self.nets.get(tgid) or empty_net(), expected_net([step] * n))
+        h = self.nhealth["hooks"][op]
+        for f in ("seen_enter", "seen_exit", "stash_entries", "matched"):
+            h[f] += n
 
     def bigram_health(self):
         if self.fail_health:

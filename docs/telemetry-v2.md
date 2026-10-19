@@ -506,3 +506,44 @@ both collectors are always stopped and closed.
 - On bigram runs it reports `check_ib2_drained` and
   `check_quiescent_reports` per invariant. Any FAIL fails the run.
 - `--require-drained` also requires a drained final snapshot.
+
+## 9. Network records (M1b S3.1/S3.2: connect and accept)
+
+The rule is additive (N6), as in §8.1: every new field is present iff
+`capabilities.net` is selected, so counts-only and bigram streams keep their
+exact shapes. `v` stays 2. Producer: `V2Emitter(net="ok")`; agent
+`--schema 2 --capabilities counts,net` (strict startup policy and
+`--allow-degraded` as for bigrams, §8.7).
+
+| Record | Field | Meaning |
+|---|---|---|
+| begin | `capabilities.net` | `{status, epoch, err, reason}`, the same rules as `bigrams` (§8.2) |
+| `bpf_proc` | `net`, `net_err` | Exactly one is non-null. `net` = `{classes, entry_observed}`. `classes` is sparse: a class object is present only if it recorded something; an absent class means 0 observed. IP classes carry `dest` (6 coarse destination counts); `local_ipc`, `other` and `unknown` do not. `entry_observed` = syscall entries of connect/accept/accept4 (attempts). Unavailable: `net: null`, `net_err: "UNSUPPORTED"`, never zeros. |
+| end | `net_health` | Per syscall (`hooks.connect/accept/accept4`): the R-NLOSS counters (`docs/bpf-collector.md`), `purged_entry`, `purged_results` (accept and accept4 pooled under `accept`), `purged_stash`, `stash_live`; and `net_map_full`. `null` when unavailable or failed. |
+| end | `totals.net` | `{entries, results}` over the tracked processes, mod 2^64; the consumer checks them. |
+| end | `drained` | Now present iff bigrams **or** net is selected (S2.1 rule extended; unchanged for bigram streams). |
+
+**No raw address or port** appears in any record. The schema has no field
+for one (`additionalProperties: false`), and the producer never stores one.
+
+**Consumer additions:**
+- every net field present iff the capability, and the unavailable rules;
+- the sparse-class rule and I-N1 (destinations = connect results per IP
+  class) on every `bpf_proc`;
+- `totals.net` cross-check;
+- the bigram/net capability fixed per epoch.
+
+**Invariants (`processpulse/net.py`):**
+
+| ID | Check | Applicability in S3.2 |
+|---|---|---|
+| I-N1 | class exclusivity: known classes; no destination outside IP classes; per IP class Σ dest = Σ connect results | every key, always |
+| I-N2 | per hook, seen = recorded (live + reclaimed) + unresolved + excluded + dropped + purged (+ `exit_without_entry` for exits; accept and accept4 exits pooled); net entries without a counts entry FAIL | drained read or drained snapshot. Applied to the S3.2 syscall hooks (plan §5 wrote it for the socket hooks of S3.3) |
+| I-N3 | byte conservation | NOT APPLICABLE until S3.3 |
+| I-N4 | per stashed syscall, `stash_entries` = `matched` + `stash_full` + `stash_overwrite` + `stash_orphaned` + `purged_stash` + `stash_live` | drained only |
+| I-N5 | partial-send bounds | NOT APPLICABLE until S3.3 |
+| I-N6 | scripted ground truth: the net object equals `expected_net(script)` | no loss in the window (`loss_window`); `unresolved_*` are excluded from it, because they cannot belong to a resolvable process |
+
+Stream form: `terms_from_stream(rc)` builds the I-N2/I-N4 terms from the
+drained snapshot's state, the keys reclaimed as exited and `net_health`.
+Collector form: `drain()["net_terms"]`.

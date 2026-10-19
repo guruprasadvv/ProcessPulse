@@ -1,0 +1,35 @@
+start_wall: 2026-10-19T14:37:06+00:00 uid=0 kernel=6.18.33.2-microsoft-standard-WSL2
+python: Python 3.14.4
+bpf_stats_enabled: 0
+mem_available_kb: 6261844
+cmd: python3 -m pytest tests/test_net_bpf.py -v -m privileged -W ignore::DeprecationWarning -x
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 16 items
+
+tests/test_net_bpf.py::test_udp_connect_destination_classes_ipv4_and_ipv6 PASSED [  6%]
+tests/test_net_bpf.py::test_tcp_loopback_connect_and_accept PASSED       [ 12%]
+tests/test_net_bpf.py::test_local_ipc_other_and_unknown_families PASSED  [ 18%]
+tests/test_net_bpf.py::test_exec_keeps_the_process_key_and_its_counters PASSED [ 25%]
+tests/test_net_bpf.py::test_an_exit_whose_entry_is_missing_is_counted_not_recorded PASSED [ 31%]
+tests/test_net_bpf.py::test_a_stale_thread_identity_is_orphaned_and_replaced PASSED [ 37%]
+tests/test_net_bpf.py::test_thread_exit_with_a_stashed_entry_is_orphaned PASSED [ 43%]
+tests/test_net_bpf.py::test_exit_reclaim_removes_net_entries_after_one_report PASSED [ 50%]
+tests/test_net_bpf.py::test_exclusion_purges_net_entries_and_stash_slots PASSED [ 56%]
+tests/test_net_bpf.py::test_a_full_net_map_drops_and_counts_never_attributes PASSED [ 62%]
+tests/test_net_bpf.py::test_a_full_stash_counts_the_entry_and_the_unmatched_exit PASSED [ 68%]
+tests/test_net_bpf.py::test_drained_accounting_balances_with_reclaim_purge_and_a_blocked_accept PASSED [ 75%]
+tests/test_net_bpf.py::test_strict_net_startup_failure_releases_every_handle PASSED [ 81%]
+tests/test_net_bpf.py::test_degraded_net_startup_runs_counts_only PASSED [ 87%]
+tests/test_net_bpf.py::test_agent_end_to_end_net_stream[caps0] PASSED    [ 93%]
+tests/test_net_bpf.py::test_agent_end_to_end_net_stream[caps1] PASSED    [100%]
+
+======================== 16 passed in 98.41s (0:01:38) =========================
+rc=0
+end_wall: 2026-10-19T14:38:46+00:00
+bpf_stats_enabled: 0
+ppc_cgroups: 0
+containers: 0

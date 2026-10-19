@@ -83,12 +83,15 @@ class Agent:
                  capabilities=("counts",), allow_degraded=False):
         if schema not in (1, 2):
             raise ValueError(f"unsupported output schema {schema!r} (1 or 2)")
-        caps = check_capabilities(capabilities)             # U9; priv/net refused
-        if "bigrams" in caps and schema != 2:
-            raise ValueError("the bigrams capability needs schema 2 (U8)")
-        if "bigrams" in caps and not use_bpf:
-            raise ValueError("the bigrams capability needs BPF (--no-bpf contradicts it)")
+        caps = check_capabilities(capabilities)             # U9, N3; priv refused
+        extras = [c for c in caps if c != "counts"]
+        if extras and schema != 2:
+            raise ValueError(f"the {', '.join(extras)} capability needs schema 2 (U8)")
+        if extras and not use_bpf:
+            raise ValueError(f"the {', '.join(extras)} capability needs BPF "
+                             "(--no-bpf contradicts it)")
         self.capabilities = caps
+        self.extras = tuple(extras)          # capabilities beyond counts (schema 2 only)
         self.allow_degraded = bool(allow_degraded)
         self._cleanup_errors = []           # close() failures after a failed start
         self.out_dir = out_dir
@@ -132,45 +135,50 @@ class Agent:
             raise
 
     def _start_bpf(self, log):
-        """(collector or None, why there is no stream, bigrams mode, bigrams reason,
-        bigrams exception). bigrams mode: None (not selected), "ok", or
-        "unavailable". Without allow_degraded a bigram start failure returns at
-        once, with no collector (the run then fails); with it, the counts-only
-        collector is started instead."""
+        """(collector or None, why there is no stream, modes, reason, exception).
+        modes: {capability: "ok" | "unavailable"} for every capability beyond
+        counts (bigrams, net). They live in one unified program, so they start or
+        fail together. Without allow_degraded a failure returns at once, with no
+        collector (the run then fails); with it, the counts-only collector is
+        started instead and every extra capability is unavailable."""
         from .bpf_collector import BpfCollector
         from .syscalls import SyscallCollector
-        mode, why, err = None, None, None
-        if "bigrams" in self.capabilities:
+        modes, why, err = {}, None, None
+        if self.extras:
             try:
                 sc = self._started(BpfCollector(capabilities=self.capabilities,
                                                 max_procs=self.max_procs, track_removals=True))
-                return sc, None, "ok", None, None
+                return sc, None, dict.fromkeys(self.extras, "ok"), None, None
             except Exception as e:
-                mode, err = "unavailable", e
-                why = f"bigram collector failed to start: {type(e).__name__}: {e}"[:300]
+                modes, err = dict.fromkeys(self.extras, "unavailable"), e
+                why = (f"{'+'.join(self.extras)} collector failed to start: "
+                       f"{type(e).__name__}: {e}")[:300]
                 if not self.allow_degraded:       # counts were not attempted: not a failure
-                    return None, None, mode, why, err
+                    return None, None, modes, why, err
                 log.write(f"{time.monotonic_ns()} {why}; --allow-degraded: counts only\n")
         try:
             sc = self._started(SyscallCollector(max_procs=self.max_procs,
                                                 track_removals=self.schema == 2))
         except Exception as e:
-            return (None, f"syscall collector failed to start: {type(e).__name__}: {e}", mode,
+            return (None, f"syscall collector failed to start: {type(e).__name__}: {e}", modes,
                     why, err)
-        return sc, None, mode, why, err
+        return sc, None, modes, why, err
 
-    def _capability_report(self, sc, sc_reason, bigrams, bigrams_reason):
+    def _capability_report(self, sc, sc_reason, modes, why):
         """Requested, active and failed capabilities (manifest)."""
-        active = [] if sc is None else ["counts"] + (["bigrams"] if bigrams == "ok" else [])
+        active = [] if sc is None else ["counts"] + [c for c in self.extras
+                                                      if modes.get(c) == "ok"]
         failed = {}
         if self.use_bpf and sc is None and sc_reason:
             failed["counts"] = sc_reason
-        if "bigrams" in self.capabilities and bigrams != "ok":
-            failed["bigrams"] = bigrams_reason or sc_reason
+        for c in self.extras:
+            if modes.get(c) != "ok":
+                failed[c] = why or sc_reason
         return {"requested": list(self.capabilities), "active": active, "failed": failed}
 
     def _fail_startup(self, files, started_wall, report, reason, error):
-        """Strict policy: bigrams were requested and could not be initialised. Closes
+        """Strict policy: a capability beyond counts was requested and could not be
+        initialised. Closes
         the output files, writes a manifest with status failed (no run result) and
         raises StartupError chained to the original exception."""
         files["agent.log"].write(f"{time.monotonic_ns()} startup failed: {reason}\n")
@@ -180,7 +188,9 @@ class Agent:
             "run_id": os.path.basename(os.path.normpath(self.out_dir)),
             "status": "failed",
             "started_wall": started_wall,
-            "error": {"stage": "startup", "capability": "bigrams", "reason": reason,
+            "error": {"stage": "startup", "capability": ",".join(report["failed"].keys()
+                                                                 - {"counts"}) or "counts",
+                      "reason": reason,
                       "type": type(error).__name__ if error is not None else None},
             "cleanup_errors": list(self._cleanup_errors),
             "capabilities": report,
@@ -191,7 +201,7 @@ class Agent:
         }
         with open(os.path.join(self.out_dir, "manifest.json"), "w") as f:
             json.dump(manifest, f, indent=2)
-        raise StartupError(f"bigrams requested but not available: {reason} "
+        raise StartupError(f"{', '.join(self.extras)} requested but not available: {reason} "
                            "(use --allow-degraded to run counts-only)") from error
 
     def _final_drain(self, rc, sc, emitter, stream, log, counters):
@@ -215,7 +225,7 @@ class Agent:
             log.write(f"{time.monotonic_ns()} drain error: {info['reason']}\n")
             return info
         for k in ("status", "reason", "reads", "changed", "still_attached", "drain_ns",
-                  "accounting"):
+                  "accounting", "net_terms"):
             info[k] = res.get(k)
         info["drained"] = res.get("drained") is True
         if not info["drained"]:
@@ -251,20 +261,22 @@ class Agent:
             with open(os.path.join(self.out_dir, "preflight.json"), "w") as f:
                 json.dump(preflight, f, indent=2)
 
-        sc, sc_reason, bigrams, bigrams_reason, bigrams_error = None, None, None, None, None
+        sc, sc_reason, modes, why, start_error = None, None, {}, None, None
         if not self.use_bpf:
             sc_reason = "disabled (--no-bpf)"
         elif not preflight["ok"]:
             bad = [c for c in preflight["checks"] if c["status"] in ("FAIL", "BLOCKED")]
             sc_reason = "preflight: " + "; ".join(f"{c['name']} {c['status']}" for c in bad)
-            if "bigrams" in self.capabilities:
-                bigrams, bigrams_reason = "unavailable", sc_reason
+            modes, why = dict.fromkeys(self.extras, "unavailable"), sc_reason
         else:
-            sc, sc_reason, bigrams, bigrams_reason, bigrams_error = self._start_bpf(log)
-        if "bigrams" in self.capabilities and bigrams != "ok" and not self.allow_degraded:
+            sc, sc_reason, modes, why, start_error = self._start_bpf(log)
+        if any(modes.get(c) != "ok" for c in self.extras) and not self.allow_degraded:
             self._fail_startup(files, started_wall,
-                               self._capability_report(sc, sc_reason, bigrams, bigrams_reason),
-                               bigrams_reason or sc_reason, bigrams_error)
+                               self._capability_report(sc, sc_reason, modes, why),
+                               why or sc_reason, start_error)
+        bigrams, net = modes.get("bigrams"), modes.get("net")
+        bigrams_reason = why if bigrams == "unavailable" else None
+        net_reason = why if net == "unavailable" else None
         if sc_reason:
             log.write(f"{time.monotonic_ns()} syscall stream unavailable: {sc_reason}\n")
 
@@ -279,7 +291,8 @@ class Agent:
             counters["failed_snapshots"] = 0
             if sc is not None:
                 emitter = V2Emitter(sc, run_id=os.path.basename(os.path.normpath(self.out_dir)),
-                                    bigrams=bigrams, bigrams_reason=bigrams_reason)
+                                    bigrams=bigrams, bigrams_reason=bigrams_reason, net=net,
+                                    net_reason=net_reason)
         try:
             rc.start()
             # Duration counts from the start of collection, not from agent start
@@ -320,7 +333,7 @@ class Agent:
                 })
                 for fh in files.values():
                     fh.flush()
-            if emitter is not None and bigrams == "ok":     # normal end of collection only
+            if emitter is not None and "ok" in (bigrams, net):   # normal end of collection only
                 drain = self._final_drain(rc, sc, emitter, stream, log, counters)
         finally:
             rc.stop()
@@ -349,13 +362,15 @@ class Agent:
         if self.schema == 2:
             manifest["output_schema"] = {"resource": 1, "health": 1, "bpf": 2}
             manifest["bpf_stream"] = {"file": stream_name, "keyframe_interval": KEYFRAME_INTERVAL}
-            report = self._capability_report(sc, sc_reason, bigrams, bigrams_reason)
+            report = self._capability_report(sc, sc_reason, modes, why)
             manifest["status"] = "ok"
             manifest["config"]["allow_degraded"] = self.allow_degraded
             manifest["capabilities"] = report
-            manifest["degraded"] = "bigrams" in report["failed"]   # only with --allow-degraded
+            manifest["degraded"] = any(c in report["failed"] for c in self.extras)
             manifest["bigrams"] = (None if "bigrams" not in self.capabilities
                                    else {"mode": bigrams, "reason": bigrams_reason})
+            manifest["net"] = (None if "net" not in self.capabilities
+                               else {"mode": net, "reason": net_reason})
             manifest["drain"] = drain
         with open(os.path.join(self.out_dir, "manifest.json"), "w") as f:
             json.dump(manifest, f, indent=2)
@@ -372,19 +387,21 @@ def main(argv=None):
     ap.add_argument("--schema", type=int, choices=(1, 2), default=1,
                     help="BPF stream format: 1 = syscall.jsonl (M1), 2 = framed bpf.jsonl")
     ap.add_argument("--capabilities", default="counts",
-                    help="BPF capabilities, comma-separated: counts (default) or counts,bigrams "
-                         "(bigrams need --schema 2)")
+                    help="BPF capabilities, comma-separated: counts (default), plus bigrams "
+                         "and/or net (both need --schema 2 and counts)")
     ap.add_argument("--allow-degraded", action="store_true",
-                    help="if the bigram program cannot start, run counts-only and mark bigrams "
-                         "unavailable instead of failing (default: fail)")
+                    help="if the bigrams/net program cannot start, run counts-only and mark "
+                         "them unavailable instead of failing (default: fail)")
     args = ap.parse_args(argv)
     caps = tuple(c.strip() for c in args.capabilities.split(",") if c.strip())
     try:
         check_capabilities(caps)
-        if "bigrams" in caps and args.schema != 2:
-            raise ValueError("the bigrams capability needs --schema 2")
-        if "bigrams" in caps and args.no_bpf:
-            raise ValueError("the bigrams capability needs BPF (--no-bpf contradicts it)")
+        extras = [c for c in caps if c != "counts"]
+        if extras and args.schema != 2:
+            raise ValueError(f"the {', '.join(extras)} capability needs --schema 2")
+        if extras and args.no_bpf:
+            raise ValueError(f"the {', '.join(extras)} capability needs BPF "
+                             "(--no-bpf contradicts it)")
     except ValueError as e:
         ap.error(str(e))
 

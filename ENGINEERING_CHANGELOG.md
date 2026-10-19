@@ -778,3 +778,83 @@ Evidence: `results/acceptance/m1b/s2.6/phase1/`.
   - 10 s counts-only v2 run;
   - 10 s default schema-1 run.
 - Counts-only S1 equivalence: 34 of 34.
+
+## 2026-10-19 — M1b S3.1/S3.2: network capability (wiring, maps, connect/accept) (uncommitted, NOT READY)
+
+Decisions N1–N10 of `docs/m1b-s3-network-plan.md` were approved. The
+implementation decisions that interpret the plan are listed in its §11.
+
+### Changes
+- `processpulse/vocab.py`: the network vocabulary (classes, destination
+  classes, stashed syscalls, results, hook fields). The syscall `VOCABULARY`
+  and its id are unchanged.
+- `bpf/net.bpf.c` (new), `PPC_CAP_NET`:
+  - **Hooks:** `sys_{enter,exit}_{connect,accept,accept4}`, tracepoints
+    only.
+  - **Class:** read from the socket behind the fd (fd table → file → socket →
+    sock, a kernel-memory read inside the tracepoint).
+  - **Destination:** a coarse class only, from the connect sockaddr's family
+    and address; the port is never read.
+  - **Maps:** `netc` (process, class) sparse map, `net_stash` per-TID stash,
+    `nhealth` R-NLOSS counters.
+  - **N3:** a network event creates the process's counts/info entries.
+  - **Build shim:** `struct bpf_task_work`, declared as in the kernel uapi
+    header.
+- `bpf/core.bpf.c`: the thread-exit hook deletes the thread's stash entry
+  (`stash_orphaned`), under `PPC_CAP_NET`.
+- `processpulse/bpf_collector.py`:
+  - capability `net` (requires counts), `max_net`/`max_net_stash` (32,768);
+  - `read_net()`, `net_health()`;
+  - purge of `netc` and stash after the barrier (`purged_net`);
+  - net values in the reclaim fingerprint, and reclaim of `netc` entries
+    (`reclaimed_net`);
+  - the drain reads the net maps and returns `net_terms`;
+  - `priv` stays reserved.
+- `processpulse/net.py` (new, stdlib): decoder, `expected_net` oracle,
+  `merge`, `totals`, checkers I-N1–I-N6, `terms_from_stream`, `loss_window`.
+- Schema v2 (additive): `capabilities.net`, `bpf_proc.net`/`net_err`,
+  `net_health`, `totals.net`; `drained` is present iff bigrams or net.
+  Validator and Reconstructor rules for presence, unavailability, sparse
+  classes, I-N1 destinations, totals, and the capability fixed per epoch.
+- `processpulse/snapshots.py`: `V2Emitter(net=...)`, with the net payload
+  inside `bpf_proc`, so a net-only change re-emits the process.
+- `processpulse/agent.py`:
+  - every capability beyond counts needs schema 2;
+  - strict startup and `--allow-degraded` apply to `net`;
+  - the drain runs when bigrams or net is ok;
+  - manifest `net`, `capabilities`, and `drain.net_terms`.
+- Tests:
+  - `tests/test_net_unit.py` (44, unprivileged);
+  - `tests/test_net_bpf.py` (16, privileged);
+  - `tests/helpers/net_helper.py` (one raw syscall per connect/accept);
+  - fake collector net support;
+  - S1/S2 tests updated where they asserted `net` was not implemented.
+- Docs: `docs/bpf-collector.md` "Network capability"; `docs/telemetry-v2.md`
+  §9; `docs/m1b-s3-network-plan.md` §11.
+
+### Validation (`results/acceptance/m1b/s3.2/`)
+- `make test` (py3.14): 74 C checks, 0 failures; 657 passed, 1 skipped.
+  py3.12 `make test-py`: 657 passed, 1 skipped. `make check` rc 0. After the
+  last one-line agent edit, `test_net_unit.py` + `test_agent_bigrams.py`: 73
+  passed.
+- Privileged `tests/test_net_bpf.py` (development run, as root): 16 passed.
+  It covers:
+  - 33 addresses across the class boundaries;
+  - TCP v4/v6 loopback connect and accept;
+  - local IPC, other and unknown families;
+  - exec, a missing entry, a stale TID, thread exit;
+  - reclaim, purge, a full map, a full stash;
+  - I-N2/I-N4 on a drained read with an accept in flight;
+  - strict and degraded startup cleanup;
+  - agent end to end with net, and with bigrams and net.
+
+  This run predates two late changes: `drain.net_terms` in the manifest and
+  one added assertion in the e2e test.
+- Verifier (`DEBUG_BPF` log): 17 programs per build, at most 1,035
+  instructions processed and 81 states. Map memlock: `netc` 6,820,288 B,
+  `net_stash` 3,410,752 B.
+- **Not completed:** the full root `make test-privileged` was stopped by the
+  session at 18 % (20 passed, none failed) because host memory was low. The
+  WSL VM restarted, leaving no processes or BPF programs behind. The final
+  JUnit run of `test_net_bpf.py` and the counts-only equivalence probe did
+  not run.

@@ -1,0 +1,98 @@
+source: microsoft/WSL2-Linux-Kernel c21a03b2943d (linux-msft-wsl-6.18.33.2) net/socket.c sha256 c3f70f13af714247
+static noinline void call_trace_sock_send_length(struct sock *sk, int ret,
+						 int flags)
+{
+	trace_sock_send_length(sk, ret, 0);
+}
+
+static inline int sock_sendmsg_nosec(struct socket *sock, struct msghdr *msg)
+{
+	int ret = INDIRECT_CALL_INET(READ_ONCE(sock->ops)->sendmsg, inet6_sendmsg,
+				     inet_sendmsg, sock, msg,
+				     msg_data_left(msg));
+	BUG_ON(ret == -EIOCBQUEUED);
+
+	if (trace_sock_send_length_enabled())
+		call_trace_sock_send_length(sock->sk, ret, 0);
+	return ret;
+}
+
+static int __sock_sendmsg(struct socket *sock, struct msghdr *msg)
+{
+	int err = security_socket_sendmsg(sock, msg,
+					  msg_data_left(msg));
+
+	return err ?: sock_sendmsg_nosec(sock, msg);
+}
+
+/**
+ *	sock_sendmsg - send a message through @sock
+ *	@sock: socket
+ *	@msg: message to send
+ *
+ *	Sends @msg through @sock, passing through LSM.
+ *	Returns the number of bytes sent, or an error code.
+ */
+int sock_sendmsg(struct socket *sock, struct msghdr *msg)
+{
+	struct sockaddr_storage *save_addr = (struct sockaddr_storage *)msg->msg_name;
+	struct sockaddr_storage address;
+	int save_len = msg->msg_namelen;
+	int ret;
+
+	if (msg->msg_name) {
+....
+static noinline void call_trace_sock_recv_length(struct sock *sk, int ret, int flags)
+{
+	trace_sock_recv_length(sk, ret, flags);
+}
+
+static inline int sock_recvmsg_nosec(struct socket *sock, struct msghdr *msg,
+				     int flags)
+{
+	int ret = INDIRECT_CALL_INET(READ_ONCE(sock->ops)->recvmsg,
+				     inet6_recvmsg,
+				     inet_recvmsg, sock, msg,
+				     msg_data_left(msg), flags);
+	if (trace_sock_recv_length_enabled())
+		call_trace_sock_recv_length(sock->sk, ret, flags);
+	return ret;
+}
+
+/**
+ *	sock_recvmsg - receive a message from @sock
+ *	@sock: socket
+ *	@msg: message to receive
+ *	@flags: message flags
+ *
+ *	Receives @msg from @sock, passing through LSM. Returns the total number
+ *	of bytes received, or an error.
+ */
+int sock_recvmsg(struct socket *sock, struct msghdr *msg, int flags)
+{
+	int err = security_socket_recvmsg(sock, msg, msg_data_left(msg), flags);
+
+	return err ?: sock_recvmsg_nosec(sock, msg, flags);
+....
+static ssize_t sock_splice_read(struct file *file, loff_t *ppos,
+				struct pipe_inode_info *pipe, size_t len,
+				unsigned int flags)
+{
+	struct socket *sock = file->private_data;
+	const struct proto_ops *ops;
+
+	ops = READ_ONCE(sock->ops);
+	if (unlikely(!ops->splice_read))
+		return copy_splice_read(file, ppos, pipe, len, flags);
+
+	return ops->splice_read(sock, ppos, pipe, len, flags);
+}
+
+static void sock_splice_eof(struct file *file)
+{
+	struct socket *sock = file->private_data;
+....
+18:	res = sock_recvmsg(sock, &msg, msg.msg_flags);
+43:	res = __sock_sendmsg(sock, &msg);
+....
+169:	.splice_write = splice_to_socket,

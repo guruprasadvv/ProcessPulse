@@ -1,0 +1,432 @@
+{
+ "caps": [
+  "counts",
+  "net"
+ ],
+ "tracepoints": [
+  "sched:sched_process_exec",
+  "sched:sched_process_exit",
+  "syscalls:sys_enter_accept",
+  "syscalls:sys_enter_accept4",
+  "syscalls:sys_enter_clone",
+  "syscalls:sys_enter_clone3",
+  "syscalls:sys_enter_connect",
+  "syscalls:sys_enter_execve",
+  "syscalls:sys_enter_execveat",
+  "syscalls:sys_enter_fork",
+  "syscalls:sys_enter_open",
+  "syscalls:sys_enter_openat",
+  "syscalls:sys_enter_openat2",
+  "syscalls:sys_enter_vfork",
+  "syscalls:sys_exit_accept",
+  "syscalls:sys_exit_accept4",
+  "syscalls:sys_exit_connect"
+ ],
+ "compilations": [
+  {
+   "name": "calibrate",
+   "ns": 3993853224
+  },
+  {
+   "name": "unified",
+   "ns": 5610945623
+  }
+ ],
+ "maps": {
+  "counts": {
+   "max_entries": 16384,
+   "memlock": 2494016
+  },
+  "info": {
+   "max_entries": 16384,
+   "memlock": 2100416
+  },
+  "threads": {
+   "max_entries": 32768,
+   "memlock": 3410752
+  },
+  "excluded": {
+   "max_entries": 64,
+   "memlock": 7616
+  },
+  "health": {
+   "max_entries": 12,
+   "memlock": 400
+  },
+  "netc": {
+   "max_entries": 32768,
+   "memlock": 6820288
+  },
+  "net_stash": {
+   "max_entries": 32768,
+   "memlock": 3410752
+  },
+  "nhealth": {
+   "max_entries": 43,
+   "memlock": 648
+  }
+ },
+ "progs": [
+  {
+   "prog_type": "5",
+   "prog_tag": "29dc52e7c2a2ca93",
+   "memlock": "4096",
+   "verified_insns": "160",
+   "prog_id": "101"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "3e4b5a194c1d995f",
+   "memlock": "4096",
+   "verified_insns": "227",
+   "prog_id": "102"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "d51f18c2b8a16181",
+   "memlock": "8192",
+   "verified_insns": "700",
+   "prog_id": "103"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "5d88e99c75f34706",
+   "memlock": "8192",
+   "verified_insns": "700",
+   "prog_id": "104"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "f3dc43c60bce1785",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "105"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "d2b126bf941593b4",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "106"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "3dba75211191b719",
+   "memlock": "8192",
+   "verified_insns": "1033",
+   "prog_id": "107"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "27769280b75922ba",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "108"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "7ca94f18a2a3d281",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "109"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "3684f049a47c33e3",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "110"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "861b9df59d9f970c",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "111"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "a80057bc35971b72",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "112"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "d6371df20205adbc",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "113"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "d10d523e512e6845",
+   "memlock": "4096",
+   "verified_insns": "393",
+   "prog_id": "114"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "9e720733b7ab7e72",
+   "memlock": "4096",
+   "verified_insns": "419",
+   "prog_id": "115"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "cb5fa774e11420b7",
+   "memlock": "4096",
+   "verified_insns": "419",
+   "prog_id": "116"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "b8264777353f8478",
+   "memlock": "4096",
+   "verified_insns": "476",
+   "prog_id": "117"
+  }
+ ],
+ "own_net_after_exclusion": [],
+ "net_health_connect": {
+  "seen_enter": 1,
+  "seen_exit": 1,
+  "unresolved_enter": 0,
+  "unresolved_exit": 0,
+  "excluded_enter": 1,
+  "excluded_exit": 1,
+  "dropped_enter": 0,
+  "dropped_exit": 0,
+  "stash_entries": 0,
+  "matched": 0,
+  "stash_full": 0,
+  "stash_overwrite": 0,
+  "stash_orphaned": 0,
+  "exit_without_entry": 0,
+  "purged_entry": 0,
+  "purged_results": 0,
+  "purged_stash": 0,
+  "stash_live": 0
+ }
+}
+{
+ "caps": [
+  "counts",
+  "bigrams",
+  "net"
+ ],
+ "tracepoints": [
+  "sched:sched_process_exec",
+  "sched:sched_process_exit",
+  "syscalls:sys_enter_accept",
+  "syscalls:sys_enter_accept4",
+  "syscalls:sys_enter_clone",
+  "syscalls:sys_enter_clone3",
+  "syscalls:sys_enter_connect",
+  "syscalls:sys_enter_execve",
+  "syscalls:sys_enter_execveat",
+  "syscalls:sys_enter_fork",
+  "syscalls:sys_enter_open",
+  "syscalls:sys_enter_openat",
+  "syscalls:sys_enter_openat2",
+  "syscalls:sys_enter_vfork",
+  "syscalls:sys_exit_accept",
+  "syscalls:sys_exit_accept4",
+  "syscalls:sys_exit_connect"
+ ],
+ "compilations": [
+  {
+   "name": "calibrate",
+   "ns": 3169028948
+  },
+  {
+   "name": "unified",
+   "ns": 5627614560
+  }
+ ],
+ "maps": {
+  "counts": {
+   "max_entries": 16384,
+   "memlock": 2625216
+  },
+  "info": {
+   "max_entries": 16384,
+   "memlock": 2100416
+  },
+  "threads": {
+   "max_entries": 32768,
+   "memlock": 3410752
+  },
+  "excluded": {
+   "max_entries": 64,
+   "memlock": 7616
+  },
+  "health": {
+   "max_entries": 12,
+   "memlock": 400
+  },
+  "bigrams": {
+   "max_entries": 131072,
+   "memlock": 12585664
+  },
+  "bglobal": {
+   "max_entries": 1,
+   "memlock": 328
+  },
+  "netc": {
+   "max_entries": 32768,
+   "memlock": 6820288
+  },
+  "net_stash": {
+   "max_entries": 32768,
+   "memlock": 3410752
+  },
+  "nhealth": {
+   "max_entries": 43,
+   "memlock": 648
+  }
+ },
+ "progs": [
+  {
+   "prog_type": "5",
+   "prog_tag": "1a0414763ecefc16",
+   "memlock": "4096",
+   "verified_insns": "413",
+   "prog_id": "119"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "3e4b5a194c1d995f",
+   "memlock": "4096",
+   "verified_insns": "227",
+   "prog_id": "120"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "26891b00594c67b4",
+   "memlock": "8192",
+   "verified_insns": "702",
+   "prog_id": "121"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "58bc5dcce28e1f11",
+   "memlock": "8192",
+   "verified_insns": "702",
+   "prog_id": "122"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "ba3bfb6acf2401e4",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "123"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "3fa0a50b7f95e807",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "124"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "b43a5adf2e3f9b6c",
+   "memlock": "8192",
+   "verified_insns": "1035",
+   "prog_id": "125"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "6b9abb93782d0a5e",
+   "memlock": "8192",
+   "verified_insns": "704",
+   "prog_id": "126"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "d7907a294cf6c0f5",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "127"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "28f8335825fffa7b",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "128"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "876f039ecd76331c",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "129"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "b7b76122abb58b7b",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "130"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "671d0dcd4c7b6086",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "131"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "0f3569bf37d73967",
+   "memlock": "8192",
+   "verified_insns": "692",
+   "prog_id": "132"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "be74cd301bf1e073",
+   "memlock": "4096",
+   "verified_insns": "420",
+   "prog_id": "133"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "e84ec24beea32449",
+   "memlock": "4096",
+   "verified_insns": "420",
+   "prog_id": "134"
+  },
+  {
+   "prog_type": "5",
+   "prog_tag": "589b4329675d4934",
+   "memlock": "4096",
+   "verified_insns": "477",
+   "prog_id": "135"
+  }
+ ],
+ "own_net_after_exclusion": [],
+ "net_health_connect": {
+  "seen_enter": 1,
+  "seen_exit": 1,
+  "unresolved_enter": 0,
+  "unresolved_exit": 0,
+  "excluded_enter": 1,
+  "excluded_exit": 1,
+  "dropped_enter": 0,
+  "dropped_exit": 0,
+  "stash_entries": 0,
+  "matched": 0,
+  "stash_full": 0,
+  "stash_overwrite": 0,
+  "stash_orphaned": 0,
+  "exit_without_entry": 0,
+  "purged_entry": 0,
+  "purged_results": 0,
+  "purged_stash": 0,
+  "stash_live": 0
+ }
+}
+rc=0

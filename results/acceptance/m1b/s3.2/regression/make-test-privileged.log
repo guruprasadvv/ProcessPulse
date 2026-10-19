@@ -1,0 +1,33 @@
+before: bpf_stats_enabled=0 ppc_cgroups=0 containers=0 networks=3 netns=0 mem_available_kb=6256432
+docker networks: bridge host none 
+cmd (as root): PYTHONUSERBASE=/home/mypc/.local make test-privileged
+python3 -m pytest tests/ -v -m "privileged"
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 765 items / 658 deselected / 107 selected
+
+tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs PASSED [  0%]
+tests/test_agent.py::test_full_run_aligns_streams_and_excludes_itself PASSED [  1%]
+tests/test_agent_bigrams_bpf.py::test_agent_bigram_run_is_valid_drained_and_balanced PASSED [  2%]
+tests/test_agent_bigrams_bpf.py::test_counts_only_schema2_run_keeps_the_s0_shape PASSED [  3%]
+tests/test_agent_bigrams_bpf.py::test_strict_startup_failure_releases_every_bpf_and_perf_handle PASSED [  4%]
+tests/test_agent_bigrams_bpf.py::test_degraded_startup_failure_releases_the_failed_program_and_runs_counts_only PASSED [  5%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1] PASSED      [  6%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1000] PASSED   [  7%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1] PASSED        [  8%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1000] PASSED     [  9%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1] PASSED      [ 10%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1000] PASSED   [ 11%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1] PASSED       [ 12%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1000] PASSED    [ 13%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[openat] PASSED [ 14%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[execve] PASSED [ 14%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone] PASSED  [ 15%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_mixed_sequence PASSED [ 16%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_across_an_exec PASSED [ 17%]
+tests/test_bigrams_acceptance.py::test_ground_truth_over_a_scope_with_exit_and_purge PASSED [ 18%]
+tests/test_bigrams_bpf.py::test_two_compilations_same_tracepoints_and_one_extra_map make: *** [Makefile:46: test-privileged] Hangup

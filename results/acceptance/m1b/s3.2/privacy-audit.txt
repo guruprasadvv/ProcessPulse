@@ -1,0 +1,104 @@
+== privacy audit 2026-10-19T20:14:27+05:30
+-- 1. BPF: every address/port token in bpf/net.bpf.c
+8: * reported, N3) and before core.bpf.c (the thread-exit hook). Requires the
+13: * The tracepoints carry fd / sockaddr pointer / addrlen at entry and ret at
+19: * Privacy: a connect()'s destination address is read from user memory into a
+20: * local variable only to compute a coarse destination class (ND_*); ports are
+212:/* Coarse class of an IPv4 address in host byte order. */
+228:/* Coarse class of an IPv6 address (network byte order bytes). */
+255:/* Destination class of a connect() sockaddr in user memory. Only the family
+256: * and the address bytes are read, never the port. */
+257:static __always_inline u16 net_dest(const void *ua, int addrlen)
+263:    if (ua == NULL || addrlen < 2 || bpf_probe_read_user(&fam, sizeof(fam), ua))
+266:        if (addrlen < 8 || bpf_probe_read_user(&a4, sizeof(a4), ua + 4))
+271:        if (addrlen < 24 || bpf_probe_read_user(a6, sizeof(a6), ua + 8))
+315:static __always_inline int net_enter(u32 sc, int fd, const void *ua, int addrlen)
+351:    s.dest = (sc == NS_CONNECT && s.cls <= NC_IP_LAST) ? net_dest(ua, addrlen) : ND_NONE;
+441:    return net_enter(NS_CONNECT, (int)args->fd, (const void *)args->uservaddr, (int)args->addrlen);
+-- 2. stored structs (nkey, ncnt, nstash) fields:
+struct nkey {
+    struct pkey proc;
+    u16 cls;
+    u16 pad1;
+    u32 pad2;
+};
+struct ncnt {
+    u64 entry[NSC];
+    u64 connect_ok;
+    u64 connect_pending;
+    u64 connect_refused;
+    u64 connect_err;
+    u64 accept_ok;            /* accept and accept4 */
+    u64 accept_err;
+    u64 dest[NDEST];          /* matched connect exits by destination class (IP classes) */
+};
+struct nstash {
+    u64 thread_start_ns;      /* detects a reused host TID */
+    struct pkey proc;
+    u16 sc;
+    u16 cls;
+    u16 dest;
+    u16 pad;
+};
+-- 3. bpf_probe_read_user calls (user memory reads):
+bpf/net.bpf.c:263:    if (ua == NULL || addrlen < 2 || bpf_probe_read_user(&fam, sizeof(fam), ua))
+bpf/net.bpf.c:266:        if (addrlen < 8 || bpf_probe_read_user(&a4, sizeof(a4), ua + 4))
+bpf/net.bpf.c:271:        if (addrlen < 24 || bpf_probe_read_user(a6, sizeof(a6), ua + 8))
+-- 4. schema properties containing addr/port/ip:
+schema property names with addr/port/ip: ['.$defs.bpf_snapshot_begin.properties.capabilities.properties.bigrams.properties.epoch.attach_since_mono_ns', '.$defs.bpf_snapshot_begin.properties.capabilities.properties.net.properties.epoch.attach_since_mono_ns', '.$defs.bpf_snapshot_begin.properties.capabilities.properties.counts.properties.epoch.attach_since_mono_ns', '.$defs.bpf_proc.properties.net.properties.classes.local_ipc', '.$defs.bpf_snapshot_end.properties.health.unreported_entries']
+-- 5. Python producer code (net.py, bpf_collector net parts, snapshots, agent): addr/port tokens
+processpulse/net.py:26:from .bigrams import FAIL, NOT_APPLICABLE, PASS, Result
+processpulse/net.py:27:from .vocab import (NET_CLASSES, NET_DEST_CLASSES, NET_HOOK_FIELDS, NET_IP_CLASSES, NET_RESULTS,
+processpulse/snapshots.py:42:import json
+processpulse/snapshots.py:43:import time
+processpulse/snapshots.py:44:from dataclasses import dataclass, field
+processpulse/snapshots.py:46:from .jsonl import MAX_RECORD_BYTES, RecordTooLarge, encode_record
+processpulse/snapshots.py:47:from .syscalls import SYSCALLS
+processpulse/snapshots.py:48:from .validate import (END_BIGRAM_FIELDS, END_NET_FIELDS, _net_object_errors,
+processpulse/snapshots.py:320:            from .net import totals as net_totals
+processpulse/snapshots.py:384:        except Exception as e:   # map read failure: report it, change nothing
+processpulse/snapshots.py:623:            from .net import totals as net_totals
+processpulse/agent.py:14:    preflight.json   preflight report
+processpulse/agent.py:42:import argparse
+processpulse/agent.py:43:import json
+processpulse/agent.py:44:import os
+processpulse/agent.py:45:import platform
+processpulse/agent.py:46:import signal
+processpulse/agent.py:47:import sys
+processpulse/agent.py:48:import time
+processpulse/agent.py:49:import uuid
+processpulse/agent.py:51:from . import SCHEMA_VERSION
+processpulse/agent.py:52:from .bpf_collector import check_capabilities
+processpulse/agent.py:53:from .identity import read_boot_id
+processpulse/agent.py:54:from .jsonl import encode_record
+processpulse/agent.py:55:from .preflight import run_preflight
+processpulse/agent.py:56:from .resource import ResourceCollector
+processpulse/agent.py:57:from .snapshots import KEYFRAME_INTERVAL, V2Emitter
+processpulse/agent.py:58:from .validate import Validator
+processpulse/agent.py:144:        from .bpf_collector import BpfCollector
+processpulse/agent.py:145:        from .syscalls import SyscallCollector
+processpulse/agent.py:167:    def _capability_report(self, sc, sc_reason, modes, why):
+processpulse/agent.py:179:    def _fail_startup(self, files, started_wall, report, reason, error):
+processpulse/agent.py:191:            "error": {"stage": "startup", "capability": ",".join(report["failed"].keys()
+processpulse/agent.py:196:            "capabilities": report,
+processpulse/agent.py:275:                               self._capability_report(sc, sc_reason, modes, why),
+processpulse/agent.py:365:            report = self._capability_report(sc, sc_reason, modes, why)
+processpulse/agent.py:368:            manifest["capabilities"] = report
+processpulse/agent.py:369:            manifest["degraded"] = any(c in report["failed"] for c in self.extras)
+processpulse/vocab.py:11:import hashlib
+processpulse/vocab.py:12:import json
+processpulse/vocab.py:13:import re
+processpulse/vocab.py:14:from dataclasses import dataclass
+processpulse/vocab.py:84:# unchanged. Only these coarse classes are ever stored; never an address or
+processpulse/vocab.py:85:# a port.
+processpulse/vocab.py:89:# Destination of a connect() on an IP socket, from its sockaddr: loopback
+processpulse/vocab.py:92:# public (any other address), unknown (unreadable, too short, or not AF_INET/6).
+-- 6. kprobe/kretprobe/fentry in bpf sources and collector:
+(end)
+
+== reviewer conclusion (manual review of the matches above)
+- Section 4/5 matches are substring false positives: "port" in import/report/unreported/support, "ip" in local_ipc, "sin" in attach_since_mono_ns. No schema property, record field, manifest key or log line holds an address or a port.
+- Stored BPF state (nkey, ncnt, nstash): only process key, class/syscall/destination-class codes, thread start time and u64 counters.
+- User memory is read in exactly 3 places, all in net_dest(): sa_family (offset 0), the IPv4 address (offset 4, 4 bytes), the IPv6 address (offset 8, 16 bytes). The port (offset 2) and IPv6 flowinfo/scope are never read. The address bytes exist only in the locals a4/a6 of that function; only the computed class code (ND_*) leaves it.
+- No kprobe, kretprobe, fentry/fexit or raw tracepoint: only TRACEPOINT_PROBE(syscalls, ...) and the existing sched tracepoints (test_net_unit.py::test_only_tracepoints_no_kprobes).
+- Test inputs (tests/test_net_bpf.py V4/V6 lists) contain literal addresses as test data; the helper replies only fd, ret and errno; nothing records them.

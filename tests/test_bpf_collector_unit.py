@@ -11,11 +11,13 @@ from processpulse.snapshots import BIGRAM_HEALTH_FIELDS
 from processpulse.vocab import SYSCALLS
 
 
-def test_counts_and_bigrams_are_implemented():
-    assert list(bc.CAPABILITIES) == ["counts", "bigrams"]
+def test_counts_bigrams_and_net_are_implemented():
+    assert list(bc.CAPABILITIES) == ["counts", "bigrams", "net"]
     assert bc.check_capabilities(("counts",)) == ("counts",)
     assert bc.check_capabilities(("counts", "bigrams")) == ("counts", "bigrams")
     assert bc.check_capabilities(("bigrams", "counts")) == ("counts", "bigrams")   # canonical order
+    assert bc.check_capabilities(("net", "counts")) == ("counts", "net")
+    assert bc.check_capabilities(("net", "bigrams", "counts")) == ("counts", "bigrams", "net")
 
 
 @pytest.mark.parametrize("caps", [(), ("counts", "counts"), ("nosuch",), ("bigrams",),
@@ -32,7 +34,14 @@ def test_bigrams_require_counts():
         bc.BpfCollector(capabilities=("bigrams",))
 
 
-@pytest.mark.parametrize("name", ["priv", "net"])
+def test_net_requires_counts():                                        # N3
+    with pytest.raises(ValueError, match="requires"):
+        bc.check_capabilities(("net",))
+    with pytest.raises(ValueError, match="requires"):
+        bc.check_capabilities(("bigrams", "net"))
+
+
+@pytest.mark.parametrize("name", ["priv"])
 def test_later_stage_capabilities_are_refused(name):
     with pytest.raises(ValueError, match="not implemented"):
         bc.check_capabilities(("counts", name))

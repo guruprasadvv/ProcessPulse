@@ -40,7 +40,10 @@ RECORD_TYPES = ("sample_begin", "proc", "sample_end", "syscall_snapshot", "healt
 RECORD_TYPES_V2 = ("bpf_snapshot_begin", "bpf_proc", "bpf_bigrams", "bpf_reclaimed",
                    "bpf_snapshot_end")
 # Additive S2 fields of a bpf_snapshot_end (plus totals.bigrams): all or none.
-END_BIGRAM_FIELDS = ("bigram_records", "bigram_health", "drained")
+END_BIGRAM_FIELDS = ("bigram_records", "bigram_health")
+# Additive S3 fields of a bpf_snapshot_end (plus totals.net): together or not at all.
+END_NET_FIELDS = ("net_health",)
+# "drained" is present iff the bigram or the net fields are (S2.1, extended in S3.1).
 
 
 def load_schema(path=SCHEMA_PATH):
@@ -174,6 +177,12 @@ def semantic_errors(record):
             if record["procs_emitted"] or record["reclaimed_records"] or record["reclaimed_keys"]:
                 out.append("bpf_snapshot_end: status failed carries no records")
         out.extend(_end_bigram_errors(record))
+        out.extend(_end_net_errors(record))
+        ext = _has_bigram_fields(record) or _has_net_fields(record)
+        if ("drained" in record) != ext:
+            out.append("bpf_snapshot_end: drained is present iff the bigram or net fields are")
+        elif ext and record["status"] == "failed" and record["drained"]:
+            out.append("bpf_snapshot_end: a failed snapshot is never drained")
     elif record.get("type") == "bpf_reclaimed":
         if not record["keys"]:
             out.append("bpf_reclaimed: keys must not be empty")
@@ -191,6 +200,13 @@ def semantic_errors(record):
         elif "pairs_lost" in record and \
                 (record["pairs_lost"] is None) == (record["bigrams_err"] is None):
             out.append("bpf_proc: exactly one of pairs_lost / bigrams_err must be set")
+        if ("net" in record) != ("net_err" in record):
+            out.append("bpf_proc: net and net_err are present together or not at all")
+        elif "net" in record:
+            if (record["net"] is None) == (record["net_err"] is None):
+                out.append("bpf_proc: exactly one of net / net_err must be set")
+            elif record["net"] is not None:
+                out.extend(_net_object_errors(record["net"]))
     elif record.get("type") == "bpf_snapshot_begin":
         cap = record["capabilities"].get("bigrams")
         if cap is not None:
@@ -201,7 +217,51 @@ def semantic_errors(record):
                     out.append("bpf_snapshot_begin: bigrams epoch must equal the counts epoch")
             elif cap["epoch"] is not None or cap["err"] is None or cap["reason"] is None:
                 out.append("bpf_snapshot_begin: unavailable bigrams need err and reason, no epoch")
+        ncap = record["capabilities"].get("net")
+        if ncap is not None:
+            if ncap["status"] == "ok":
+                if ncap["err"] is not None or ncap["reason"] is not None:
+                    out.append("bpf_snapshot_begin: net ok carries no err / reason")
+                if ncap["epoch"] != record["capabilities"]["counts"]["epoch"]:
+                    out.append("bpf_snapshot_begin: net epoch must equal the counts epoch")
+            elif ncap["epoch"] is not None or ncap["err"] is None or ncap["reason"] is None:
+                out.append("bpf_snapshot_begin: unavailable net needs err and reason, no epoch")
     return out
+
+
+def _net_object_errors(net):
+    """Sparse classes: a class object that recorded nothing must be absent."""
+    out = []
+    for cls, c in net["classes"].items():
+        counts = [v for k, v in c.items() if k != "dest"] + list(c.get("dest", {}).values())
+        if not any(counts):
+            out.append(f"bpf_proc: net class {cls} recorded nothing and must be absent")
+        elif "dest" in c and sum(c["dest"].values()) != (c["connect_ok"] + c["connect_pending"]
+                                                         + c["connect_refused"] + c["connect_err"]):
+            out.append(f"bpf_proc: net class {cls}: destinations != connect results (I-N1)")
+    return out
+
+
+def _has_bigram_fields(end):
+    return any(f in end for f in END_BIGRAM_FIELDS) or "bigrams" in end["totals"]
+
+
+def _has_net_fields(end):
+    return any(f in end for f in END_NET_FIELDS) or "net" in end["totals"]
+
+
+def _end_net_errors(end):
+    present = [f in end for f in END_NET_FIELDS] + ["net" in end["totals"]]
+    if not any(present):
+        return []
+    if not all(present):
+        return ["bpf_snapshot_end: net fields are present together or not at all"]
+    if end["status"] == "failed":
+        if end["net_health"] is not None:
+            return ["bpf_snapshot_end: status failed carries no net health"]
+    elif (end["totals"]["net"] is None) != (end["net_health"] is None):
+        return ["bpf_snapshot_end: net totals and health are null together"]
+    return []
 
 
 def _end_bigram_errors(end):
@@ -212,8 +272,8 @@ def _end_bigram_errors(end):
         return ["bpf_snapshot_end: bigram fields are present together or not at all"]
     out = []
     if end["status"] == "failed":
-        if end["bigram_records"] or end["bigram_health"] is not None or end["drained"]:
-            out.append("bpf_snapshot_end: status failed carries no bigram records, health or drain")
+        if end["bigram_records"] or end["bigram_health"] is not None:
+            out.append("bpf_snapshot_end: status failed carries no bigram records or health")
     elif (end["totals"]["bigrams"] is None) != (end["bigram_health"] is None):
         out.append("bpf_snapshot_end: bigram totals and health are null together")
     return out

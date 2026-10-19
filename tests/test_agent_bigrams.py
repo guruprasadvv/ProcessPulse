@@ -57,7 +57,8 @@ def env(monkeypatch):
     def start_bpf(self, log):
         f = box["fake"]
         f.log.append("start")
-        return f, None, box["mode"], box["reason"], None
+        modes = {} if box["mode"] is None else {"bigrams": box["mode"]}
+        return f, None, modes, box["reason"], None
     monkeypatch.setattr(Agent, "_start_bpf", start_bpf)
     return box
 
@@ -89,7 +90,10 @@ def test_schema1_stays_the_default_and_bigrams_need_schema2(tmp_path):
     assert a.schema == 1 and a.capabilities == ("counts",)
     with pytest.raises(ValueError, match="schema 2"):
         Agent(str(tmp_path), capabilities=CAPS)
-    for bad in (("bigrams",), ("counts", "net"), ("counts", "priv"), (), ("counts", "counts")):
+    with pytest.raises(ValueError, match="schema 2"):
+        Agent(str(tmp_path), capabilities=("counts", "net"))         # net is schema 2 only too
+    assert Agent(str(tmp_path), schema=2, capabilities=("counts", "net")).extras == ("net",)
+    for bad in (("bigrams",), ("net",), ("counts", "priv"), (), ("counts", "counts")):
         with pytest.raises(ValueError):
             Agent(str(tmp_path), schema=2, capabilities=bad)
     with pytest.raises(ValueError, match="BPF"):
@@ -118,7 +122,11 @@ def test_cli_parses_and_refuses_capabilities(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         main(["--out", str(tmp_path), "--capabilities", "counts,bigrams"])     # schema 1
     with pytest.raises(SystemExit):
-        main(["--out", str(tmp_path), "--schema", "2", "--capabilities", "counts,net"])
+        main(["--out", str(tmp_path), "--capabilities", "counts,net"])          # schema 1
+    with pytest.raises(SystemExit):
+        main(["--out", str(tmp_path), "--schema", "2", "--capabilities", "net"])  # no counts
+    assert main(["--out", str(tmp_path), "--schema", "2", "--capabilities", "counts,net"]) == 0
+    assert seen["capabilities"] == ("counts", "net")
     with pytest.raises(SystemExit):
         main(["--out", str(tmp_path), "--schema", "2", "--capabilities", "counts,priv"])
     with pytest.raises(SystemExit):
@@ -323,7 +331,7 @@ def test_by_default_a_bigram_start_failure_starts_nothing_else(monkeypatch, tmp_
     a = Agent(str(tmp_path), schema=2, capabilities=CAPS)
     with open(tmp_path / "log.txt", "w") as log:
         sc, reason, mode, why, err = a._start_bpf(log)
-    assert sc is None and mode == "unavailable" and "verifier rejected" in why
+    assert sc is None and mode == {"bigrams": "unavailable"} and "verifier rejected" in why
     assert isinstance(err, RuntimeError)
     assert events == [("bigram", CAPS), "bigram.close"]               # no counts-only start
 
@@ -335,7 +343,7 @@ def test_allow_degraded_falls_back_to_counts_only_and_closes_the_failed_program(
     a = Agent(str(tmp_path), schema=2, capabilities=CAPS, allow_degraded=True)
     with open(tmp_path / "log.txt", "w") as log:
         sc, reason, mode, why, err = a._start_bpf(log)
-    assert reason is None and mode == "unavailable" and "verifier rejected" in why
+    assert reason is None and mode == {"bigrams": "unavailable"} and "verifier rejected" in why
     assert events[0] == ("bigram", CAPS) and events[1] == "bigram.close"
     assert events[-1][0] == "counts" and events[-1][1]["track_removals"] is True
 
@@ -415,7 +423,7 @@ def test_when_both_programs_fail_there_is_no_stream_and_the_reason_is_kept(monke
     with open(tmp_path / "log.txt", "w") as log:
         sc, reason, mode, why, err = a._start_bpf(log)
     assert sc is None and "syscall collector failed to start" in reason
-    assert mode == "unavailable" and "kheaders missing" in why
+    assert mode == {"bigrams": "unavailable"} and "kheaders missing" in why
 
 
 # --- strict startup policy (default) and explicit degraded mode -------------------------------

@@ -12,6 +12,9 @@ TRACEPOINT_PROBE(sched, sched_process_exit)
     u32 level = 0, cpid = 0;
 
     thread_exit();                       /* every thread (F4) */
+#ifdef PPC_CAP_NET
+    net_thread_exit();                   /* its stashed connect/accept entry, if any */
+#endif
     if (!args->group_dead)
         return 0;
     if (resolve(&k, &level, &cpid) != 0)

@@ -45,7 +45,8 @@ from dataclasses import dataclass, field
 
 from .jsonl import MAX_RECORD_BYTES, RecordTooLarge, encode_record
 from .syscalls import SYSCALLS
-from .validate import END_BIGRAM_FIELDS, v2_proc_semantic_errors
+from .validate import (END_BIGRAM_FIELDS, END_NET_FIELDS, _net_object_errors,
+                       v2_proc_semantic_errors)
 
 V = 2
 KEYFRAME_INTERVAL = 60
@@ -56,6 +57,7 @@ U64 = 1 << 64
 _HEADER = ("type", "v", "seq")
 
 BIGRAM_CAPABILITY = "bigrams"
+NET_CAPABILITY = "net"
 BIGRAM_MARKERS = ("START_NEW", "START_ATTACH", "START_LOST", "EXEC")   # first element only
 MAX_PAIRS_PER_RECORD = 1024
 BIGRAM_HEALTH_FIELDS = ("bigram_dropped", "bigram_map_full", "thread_map_full", "pre_arm_events",
@@ -125,6 +127,45 @@ def bigram_totals(payloads, tables):
             "pairs_lost": sum(p["pairs_lost"] for p in payloads) % U64}
 
 
+def _net_problems(b, procs, end):
+    """Checks the net content of one framed snapshot (S3): presence of every net
+    field iff the capability is selected, the unavailable rules (null with
+    net_err, never zeros), the epoch, and that drained is present iff bigrams
+    or net are selected."""
+    cap = b["capabilities"].get(NET_CAPABILITY)
+    present = [f in end for f in END_NET_FIELDS] + ["net" in end["totals"]]
+    out = []
+    ext = cap is not None or BIGRAM_CAPABILITY in b["capabilities"]
+    if ("drained" in end) != ext:
+        out.append("drained present without the bigrams/net capability, or missing with it")
+    elif ext and end["status"] == "failed" and end["drained"]:
+        out.append("failed snapshot claims a drain")
+    if cap is None:
+        if any(present) or any("net" in p or "net_err" in p for p in procs):
+            out.append("net fields without the net capability")
+        return out
+    if not all(present) or any("net" not in p or "net_err" not in p for p in procs):
+        return out + ["net fields missing although the capability is selected"]
+    if end["status"] == "failed" and end["net_health"] is not None:
+        out.append("failed snapshot carries net health")
+    if cap["status"] != "ok":
+        if any(p["net"] is not None or p["net_err"] != cap["err"] for p in procs):
+            out.append("bpf_proc of an unavailable net capability needs net null and its err")
+        if end["totals"]["net"] is not None or end["net_health"] is not None:
+            out.append("unavailable net carries totals or health")
+        return out
+    if cap["epoch"] != b["capabilities"][CAPABILITY]["epoch"]:
+        out.append("net epoch differs from the counts epoch")
+    if any(p["net"] is None or p["net_err"] is not None for p in procs):
+        out.append("bpf_proc lacks net although net is ok")
+    for p in procs:
+        if p["net"] is not None:
+            out.extend(_net_object_errors(p["net"]))       # sparse classes, I-N1 destinations
+    if end["totals"]["net"] is None or (end["status"] == "ok" and end["net_health"] is None):
+        out.append("net totals or health missing although net is ok")
+    return out
+
+
 def _bigram_tables(b, procs, bigr, end):
     """Checks the bigram content of one framed snapshot: (tables, problems).
 
@@ -145,8 +186,8 @@ def _bigram_tables(b, procs, bigr, end):
     out = []
     if end["bigram_records"] != len(bigr):
         out.append(f"bigram_records {end['bigram_records']} != {len(bigr)}")
-    if end["status"] == "failed" and (end["drained"] or end["bigram_health"] is not None):
-        out.append("failed snapshot carries bigram health or a drain")
+    if end["status"] == "failed" and end["bigram_health"] is not None:
+        out.append("failed snapshot carries bigram health")
     if cap["status"] != "ok":
         if bigr:
             out.append("bpf_bigrams although the capability is unavailable")
@@ -197,7 +238,8 @@ class V2Emitter:
 
     def __init__(self, collector, run_id, keyframe_interval=KEYFRAME_INTERVAL,
                  limit=MAX_RECORD_BYTES, clock=time.monotonic_ns, bigrams=None,
-                 bigrams_reason=None, max_pairs_per_record=MAX_PAIRS_PER_RECORD):
+                 bigrams_reason=None, max_pairs_per_record=MAX_PAIRS_PER_RECORD, net=None,
+                 net_reason=None):
         if getattr(collector, "track_removals", True) is not True:
             raise ValueError("V2Emitter needs a collector created with track_removals=True")
         if bigrams not in (None, "ok", "unavailable"):
@@ -206,6 +248,14 @@ class V2Emitter:
             raise ValueError("bigrams='ok' needs a collector with the bigrams capability")
         if bigrams == "unavailable" and not bigrams_reason:
             raise ValueError("unavailable bigrams need a reason")
+        if net not in (None, "ok", "unavailable"):
+            raise ValueError(f"net must be None, 'ok' or 'unavailable', not {net!r}")
+        if net == "ok" and getattr(collector, "has_net", False) is not True:
+            raise ValueError("net='ok' needs a collector with the net capability")
+        if net == "unavailable" and not net_reason:
+            raise ValueError("unavailable net needs a reason")
+        self.net = net
+        self.net_reason = net_reason if net == "unavailable" else None
         self.c = collector
         self.run_id = run_id
         self.keyframe_interval = keyframe_interval
@@ -244,10 +294,16 @@ class V2Emitter:
             rec["capabilities"][BIGRAM_CAPABILITY] = {"status": "unavailable", "epoch": None,
                                                       "err": "UNSUPPORTED",
                                                       "reason": self.bigrams_reason}
+        if self.net == "ok":
+            rec["capabilities"][NET_CAPABILITY] = {"status": "ok", "epoch": dict(epoch),
+                                                   "err": None, "reason": None}
+        elif self.net == "unavailable":
+            rec["capabilities"][NET_CAPABILITY] = {"status": "unavailable", "epoch": None,
+                                                   "err": "UNSUPPORTED", "reason": self.net_reason}
         return rec
 
     def _end(self, seq, status, reason, procs, reclaimed, nkeys, live, loss, health, read_err,
-             tables=None, parts=0, bigram_health=None, drained=False):
+             tables=None, parts=0, bigram_health=None, drained=False, net_health=None):
         rec = {
             "type": "bpf_snapshot_end", "v": V, "seq": seq, "t_mono_ns": self.clock(),
             "status": status, "reason": reason, "procs_emitted": procs,
@@ -260,8 +316,24 @@ class V2Emitter:
             rec["totals"]["bigrams"] = bigram_totals(live.values(), tables.values()) if ok else None
             rec["bigram_records"] = parts
             rec["bigram_health"] = bigram_health if ok and status == "ok" else None
+        if self.net is not None:
+            from .net import totals as net_totals
+            ok = self.net == "ok"
+            rec["totals"]["net"] = net_totals(p.get("net") for p in live.values()) if ok else None
+            rec["net_health"] = net_health if ok and status == "ok" else None
+        if self.bigrams is not None or self.net is not None:
             rec["drained"] = bool(drained) and status == "ok"
         return rec
+
+    def _net_values(self):
+        """net ok: {key tuple: net object} of the collector's last snapshot()
+        (BpfCollector.last_net, keyed (start_ns, tgid))."""
+        c, ln = self.c, self.c.last_net
+        if ln is None:
+            raise RuntimeError("the collector's snapshot carried no net values")
+        div = 1_000_000_000 // c.ticks
+        return {(c.boot_id, c.distro_pidns_ino, tgid, start_ns // div): n
+                for (start_ns, tgid), n in ln["nets"].items()}
 
     def _bigram_values(self):
         """bigrams ok: {key tuple: (table, pairs_lost)} of the collector's last
@@ -299,6 +371,14 @@ class V2Emitter:
                 if missing:                   # every counts entry has a table (read_bigrams)
                     raise RuntimeError(f"no pair table for {len(missing)} process(es)")
                 bhealth = self.c.bigram_health()
+            nvalues = nhealth = None
+            if self.net == "ok":
+                nvalues = self._net_values()
+                missing = [key_tuple(p["key"]) for p in snap["procs"]
+                           if key_tuple(p["key"]) not in nvalues]
+                if missing:                   # every counts entry has a net object (read_net)
+                    raise RuntimeError(f"no net values for {len(missing)} process(es)")
+                nhealth = self.c.net_health()
             drained = getattr(self.c, "last_snapshot_drained", False) is True
             removed = self.c.take_removed()
         except Exception as e:   # map read failure: report it, change nothing
@@ -322,6 +402,10 @@ class V2Emitter:
                 new_tables[kt] = table
             elif self.bigrams == "unavailable":
                 p = dict(p, pairs_lost=None, bigrams_err="UNSUPPORTED")
+            if self.net == "ok":
+                p = dict(p, net=nvalues[kt], net_err=None)
+            elif self.net == "unavailable":
+                p = dict(p, net=None, net_err="UNSUPPORTED")
             procs[kt] = p
         removals, gone = [], set()
         for reason in ("exited", "self_excluded"):
@@ -377,7 +461,7 @@ class V2Emitter:
         health["unreported_entries"] = self.c.last_unreported
         recs.append(self._end(seq, "ok", None, len(emit), len(chunks), len(removals), live,
                               loss, health, None, tables=tables, parts=len(parts),
-                              bigram_health=bhealth, drained=drained))
+                              bigram_health=bhealth, drained=drained, net_health=nhealth))
 
         def commit():
             self.live = live
@@ -532,13 +616,19 @@ class Reconstructor:
                 or end["totals"]["counts"] != totals(self.state.values())):
             return False
         want = end["totals"].get("bigrams")
-        return want is None or want == bigram_totals(self.state.values(), self.pairs.values())
+        if want is not None and want != bigram_totals(self.state.values(), self.pairs.values()):
+            return False
+        want = end["totals"].get("net")
+        if want is not None:
+            from .net import totals as net_totals
+            return want == net_totals(p.get("net") for p in self.state.values())
+        return True
 
     def _close(self, b, procs, bigr, recl, end):
         seq = b["seq"]
         problems = self._structure_problems(b, procs, bigr, recl, end)
         tables, more = _bigram_tables(b, procs, bigr, end)
-        problems += more
+        problems += more + _net_problems(b, procs, end)
         if problems:
             self.stats["snapshots_incomplete"] += 1
             self._invalidate(f"snapshot {seq} rejected: {'; '.join(problems[:3])}")
@@ -547,7 +637,9 @@ class Reconstructor:
         cap = b["capabilities"][CAPABILITY]
         epoch = (cap["epoch"]["run_id"], cap["epoch"]["attach_since_mono_ns"])
         bcap = b["capabilities"].get(BIGRAM_CAPABILITY)
-        caps = None if bcap is None else (bcap["status"], bcap["err"])
+        ncap = b["capabilities"].get(NET_CAPABILITY)
+        caps = (None if bcap is None else (bcap["status"], bcap["err"]),
+                None if ncap is None else (ncap["status"], ncap["err"]))
         if epoch != self.epoch:
             if self.epoch is not None:
                 self.stats["epoch_changes"] += 1
@@ -564,7 +656,7 @@ class Reconstructor:
                 self._invalidate(f"calibration changed within an epoch at seq {seq}")
                 self.calibration = b["calibration"]
             if caps != self._caps:
-                self._invalidate(f"bigram capability changed within an epoch at seq {seq}")
+                self._invalidate(f"bigram/net capability changed within an epoch at seq {seq}")
                 self._caps = caps
             if self._drained:                # the drained snapshot is the epoch's last
                 self.stats["snapshots_after_drain"] += 1

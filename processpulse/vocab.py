@@ -77,3 +77,25 @@ VOCABULARY = Vocabulary(
 
 SYSCALLS = VOCABULARY.syscalls
 FAMILIES = VOCABULARY.family_map()
+
+# Network capability "net" (M1b S3; docs/m1b-s3-network-plan.md, N1-N10). The
+# position of a name is its code in bpf/net.bpf.c (NC_*, ND_*, NS_*, NH_*).
+# Separate from VOCABULARY: the syscall vocabulary and its identifier are
+# unchanged. Only these coarse classes are ever stored; never an address or
+# a port.
+NET_CLASSES = ("inet4_tcp", "inet4_udp", "inet4_other", "inet6_tcp", "inet6_udp",
+               "inet6_other", "local_ipc", "other", "unknown")
+NET_IP_CLASSES = NET_CLASSES[:6]             # the classes with a destination class
+# Destination of a connect() on an IP socket, from its sockaddr: loopback
+# (127/8, ::1), private (RFC 1918, fc00::/7), link_local (169.254/16,
+# fe80::/10), special (0/8, multicast, 240/4 incl. broadcast, ::, ff00::/8),
+# public (any other address), unknown (unreadable, too short, or not AF_INET/6).
+NET_DEST_CLASSES = ("loopback", "private", "link_local", "special", "public", "unknown")
+NET_SYSCALLS = ("connect", "accept", "accept4")          # stashed: entry -> exit
+NET_RESULTS = ("connect_ok", "connect_pending", "connect_refused", "connect_err",
+               "accept_ok", "accept_err")                 # accept and accept4 pooled
+# Per-syscall health counters (index = syscall * len + field).
+NET_HOOK_FIELDS = ("seen_enter", "seen_exit", "unresolved_enter", "unresolved_exit",
+                   "excluded_enter", "excluded_exit", "dropped_enter", "dropped_exit",
+                   "stash_entries", "matched", "stash_full", "stash_overwrite",
+                   "stash_orphaned", "exit_without_entry")

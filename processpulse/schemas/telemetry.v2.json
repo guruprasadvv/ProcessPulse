@@ -110,6 +110,26 @@
                 "reason": {"type": ["string", "null"]}
               }
             },
+            "net": {
+              "description": "Network telemetry (S3; connect/accept in S3.2). ok: epoch equals the counts epoch, err and reason null. unavailable: no net values in this epoch; epoch null, err (UNSUPPORTED) and reason say why.",
+              "type": "object",
+              "required": ["status", "epoch", "err", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "status": {"enum": ["ok", "unavailable"]},
+                "epoch": {
+                  "type": ["object", "null"],
+                  "required": ["run_id", "attach_since_mono_ns"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "run_id": {"type": "string"},
+                    "attach_since_mono_ns": {"$ref": "#/$defs/mono_ns"}
+                  }
+                },
+                "err": {"$ref": "#/$defs/net_err"},
+                "reason": {"type": ["string", "null"]}
+              }
+            },
             "counts": {
               "type": "object",
               "required": ["status", "epoch", "probe"],
@@ -159,7 +179,42 @@
         "counts": {"$ref": "#/$defs/syscall_counts"},
         "exited": {"type": "boolean"},
         "pairs_lost": {"type": ["integer", "null"], "minimum": 0, "maximum": 18446744073709551615},
-        "bigrams_err": {"$ref": "#/$defs/bigram_err"}
+        "bigrams_err": {"$ref": "#/$defs/bigram_err"},
+        "net": {
+          "description": "Network counters of this process (S3), cumulative since the epoch; present iff the net capability is selected. null with net_err when it is unavailable, never zeros. classes is sparse: a class that recorded nothing is absent (0 observed).",
+          "type": ["object", "null"],
+          "required": ["classes", "entry_observed"],
+          "additionalProperties": false,
+          "properties": {
+            "classes": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "inet4_tcp": {"$ref": "#/$defs/net_ip_class"},
+                "inet4_udp": {"$ref": "#/$defs/net_ip_class"},
+                "inet4_other": {"$ref": "#/$defs/net_ip_class"},
+                "inet6_tcp": {"$ref": "#/$defs/net_ip_class"},
+                "inet6_udp": {"$ref": "#/$defs/net_ip_class"},
+                "inet6_other": {"$ref": "#/$defs/net_ip_class"},
+                "local_ipc": {"$ref": "#/$defs/net_local_class"},
+                "other": {"$ref": "#/$defs/net_local_class"},
+                "unknown": {"$ref": "#/$defs/net_local_class"}
+              }
+            },
+            "entry_observed": {
+              "description": "connect/accept/accept4 syscall entries observed (attempts), before the class is known.",
+              "type": "object",
+              "required": ["connect", "accept", "accept4"],
+              "additionalProperties": false,
+              "properties": {
+                "connect": {"$ref": "#/$defs/u64"},
+                "accept": {"$ref": "#/$defs/u64"},
+                "accept4": {"$ref": "#/$defs/u64"}
+              }
+            }
+          }
+        },
+        "net_err": {"$ref": "#/$defs/net_err"}
       }
     },
 
@@ -175,6 +230,78 @@
     "bigram_second": {
       "description": "Second element of a pair: a vocabulary syscall, never a marker (I-B5).",
       "enum": ["execve", "execveat", "open", "openat", "openat2", "clone", "clone3", "fork", "vfork"]
+    },
+    "net_err": {
+      "description": "Why net telemetry is unavailable. Only UNSUPPORTED (unavailable for the whole epoch) has a producer path.",
+      "type": ["string", "null"],
+      "enum": ["UNSUPPORTED", null]
+    },
+    "net_ip_class": {
+      "description": "Connect/accept results of one IP socket class (matched syscall exits). dest: the connect exits by coarse destination class of the sockaddr; no address or port is ever recorded.",
+      "type": "object",
+      "required": ["connect_ok", "connect_pending", "connect_refused", "connect_err", "accept_ok", "accept_err", "dest"],
+      "additionalProperties": false,
+      "properties": {
+        "connect_ok": {"$ref": "#/$defs/u64"},
+        "connect_pending": {"$ref": "#/$defs/u64"},
+        "connect_refused": {"$ref": "#/$defs/u64"},
+        "connect_err": {"$ref": "#/$defs/u64"},
+        "accept_ok": {"$ref": "#/$defs/u64"},
+        "accept_err": {"$ref": "#/$defs/u64"},
+        "dest": {
+          "type": "object",
+          "required": ["loopback", "private", "link_local", "special", "public", "unknown"],
+          "additionalProperties": false,
+          "properties": {
+            "loopback": {"$ref": "#/$defs/u64"},
+            "private": {"$ref": "#/$defs/u64"},
+            "link_local": {"$ref": "#/$defs/u64"},
+            "special": {"$ref": "#/$defs/u64"},
+            "public": {"$ref": "#/$defs/u64"},
+            "unknown": {"$ref": "#/$defs/u64"}
+          }
+        }
+      }
+    },
+    "net_local_class": {
+      "description": "Connect/accept results of a non-IP class (local_ipc: AF_UNIX/NETLINK/VSOCK; other; unknown: not a readable socket). No destination class.",
+      "type": "object",
+      "required": ["connect_ok", "connect_pending", "connect_refused", "connect_err", "accept_ok", "accept_err"],
+      "additionalProperties": false,
+      "properties": {
+        "connect_ok": {"$ref": "#/$defs/u64"},
+        "connect_pending": {"$ref": "#/$defs/u64"},
+        "connect_refused": {"$ref": "#/$defs/u64"},
+        "connect_err": {"$ref": "#/$defs/u64"},
+        "accept_ok": {"$ref": "#/$defs/u64"},
+        "accept_err": {"$ref": "#/$defs/u64"}
+      }
+    },
+    "net_hook": {
+      "description": "R-NLOSS counters of one stashed syscall (cumulative), the purge terms and the stash slots in use at the snapshot.",
+      "type": "object",
+      "required": ["seen_enter", "seen_exit", "unresolved_enter", "unresolved_exit", "excluded_enter", "excluded_exit", "dropped_enter", "dropped_exit", "stash_entries", "matched", "stash_full", "stash_overwrite", "stash_orphaned", "exit_without_entry", "purged_entry", "purged_results", "purged_stash", "stash_live"],
+      "additionalProperties": false,
+      "properties": {
+        "seen_enter": {"$ref": "#/$defs/u64"},
+        "seen_exit": {"$ref": "#/$defs/u64"},
+        "unresolved_enter": {"$ref": "#/$defs/u64"},
+        "unresolved_exit": {"$ref": "#/$defs/u64"},
+        "excluded_enter": {"$ref": "#/$defs/u64"},
+        "excluded_exit": {"$ref": "#/$defs/u64"},
+        "dropped_enter": {"$ref": "#/$defs/u64"},
+        "dropped_exit": {"$ref": "#/$defs/u64"},
+        "stash_entries": {"$ref": "#/$defs/u64"},
+        "matched": {"$ref": "#/$defs/u64"},
+        "stash_full": {"$ref": "#/$defs/u64"},
+        "stash_overwrite": {"$ref": "#/$defs/u64"},
+        "stash_orphaned": {"$ref": "#/$defs/u64"},
+        "exit_without_entry": {"$ref": "#/$defs/u64"},
+        "purged_entry": {"$ref": "#/$defs/u64"},
+        "purged_results": {"$ref": "#/$defs/u64"},
+        "purged_stash": {"$ref": "#/$defs/u64"},
+        "stash_live": {"$ref": "#/$defs/u64"}
+      }
     },
 
     "bpf_bigrams": {
@@ -251,7 +378,36 @@
                 "pairs": {"$ref": "#/$defs/u64"},
                 "pairs_lost": {"$ref": "#/$defs/u64"}
               }
+            },
+            "net": {
+              "description": "entries: sum of entry_observed; results: sum of every connect/accept result; over the tracked processes, mod 2^64. null when the net capability is unavailable.",
+              "type": ["object", "null"],
+              "required": ["entries", "results"],
+              "additionalProperties": false,
+              "properties": {
+                "entries": {"$ref": "#/$defs/u64"},
+                "results": {"$ref": "#/$defs/u64"}
+              }
             }
+          }
+        },
+        "net_health": {
+          "description": "Cumulative net counters (S3, R-NLOSS): per stashed syscall, and net_map_full. accept and accept4 results are pooled, so purged_results of accept4 is 0. null when the capability is unavailable or the snapshot failed; present iff the net capability is selected.",
+          "type": ["object", "null"],
+          "required": ["hooks", "net_map_full"],
+          "additionalProperties": false,
+          "properties": {
+            "hooks": {
+              "type": "object",
+              "required": ["connect", "accept", "accept4"],
+              "additionalProperties": false,
+              "properties": {
+                "connect": {"$ref": "#/$defs/net_hook"},
+                "accept": {"$ref": "#/$defs/net_hook"},
+                "accept4": {"$ref": "#/$defs/net_hook"}
+              }
+            },
+            "net_map_full": {"$ref": "#/$defs/u64"}
           }
         },
         "bigram_records": {"$ref": "#/$defs/u64"},
@@ -272,7 +428,7 @@
           }
         },
         "drained": {
-          "description": "true only on the final snapshot taken after the probes were detached and the maps read stably (U3); no snapshot of the epoch follows it.",
+          "description": "true only on the final snapshot taken after the probes were detached and the maps read stably (U3); no snapshot of the epoch follows it. Present iff the bigrams or the net capability is selected.",
           "type": "boolean"
         },
         "loss": {
