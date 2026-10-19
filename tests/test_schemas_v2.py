@@ -59,7 +59,8 @@ INVALID = [
     _mut(FIX["begin"], ["v"], 1),                                   # v2 type, wrong version
     _mut(FIX["begin"], ["keyframe"], 1),                            # boolean required
     _mut(FIX["begin"], ["capabilities", "counts", "status"], "unavailable"),  # not in S0
-    _mut(FIX["begin"], ["capabilities", "bigrams"], {}),            # no other capability in S0
+    _mut(FIX["begin"], ["capabilities", "bigrams"], {}),            # incomplete bigrams entry (S2)
+    _mut(FIX["begin"], ["capabilities", "priv"], {}),               # no other capability
     _mut(FIX["begin"], ["calibration", "boot_id"], "x"),
     _mut(FIX["proc"], ["counts", "openat"], -1),
     _mut(FIX["proc"], ["counts", "openat"], U64_MAX + 1),           # above u64

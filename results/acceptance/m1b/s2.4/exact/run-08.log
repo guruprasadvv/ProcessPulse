@@ -1,0 +1,33 @@
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1000]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1000]
+  tests/test_bigrams_acceptance.py:109: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("n", [1, 1000])
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[openat]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[execve]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone]
+  tests/test_bigrams_acceptance.py:115: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.slow
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_mixed_sequence
+  tests/test_bigrams_acceptance.py:121: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_exact_pairs_mixed_sequence(col, spawn_helper, record_property):
+
+tests/test_bigrams_acceptance.py::test_exact_pairs_across_an_exec
+  tests/test_bigrams_acceptance.py:127: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_exact_pairs_across_an_exec(col, helper_bin, exec_target, record_property):
+
+tests/test_bigrams_acceptance.py::test_ground_truth_over_a_scope_with_exit_and_purge
+  tests/test_bigrams_acceptance.py:145: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_ground_truth_over_a_scope_with_exit_and_purge(col, spawn_helper, record_property):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+14 passed, 14 warnings in 114.93s (0:01:54)

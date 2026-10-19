@@ -10,6 +10,9 @@
  *   DISTRO_PIDNS_INUM  inode of the distro pid namespace (calibrated)
  *   MAX_THREADS        capacity of the per-thread slot map
  *   PPC_CAP_<NAME>     one per enabled capability
+ * Source order: common.h, bigrams.bpf.c (if enabled), syscall_counter.bpf.c,
+ * core.bpf.c, probes. The counter calls the bigram hooks, so the bigram
+ * source precedes it.
  *
  * Identity is resolved in-kernel (CLAUDE.md §5): an event is attributed only
  * if the task's pid has a number at DISTRO_LEVEL *in the distro namespace*
@@ -34,7 +37,11 @@
 #define H_THREAD_STALE    6   /* a slot belonged to an earlier thread with the same TID */
 #define H_THREAD_CLEANED  7   /* slots deleted at thread exit or after exec */
 #define H_EXEC_REFRESH    8   /* process metadata refreshed at exec */
-#define NHEALTH           9
+/* 9-11: maintained only by bigrams.bpf.c (stay 0 in other builds). */
+#define H_BIGRAM_FULL     9   /* R-LOSS row 3: the bigram map was full */
+#define H_BIGRAM_DROPPED 10   /* every pair not recorded (rows 1-3 and pre-arm events) */
+#define H_PRE_ARM        11   /* counted entries before arming; their pairs are lost */
+#define NHEALTH          12
 
 struct pkey {
     u64 start_ns;          /* group_leader->start_boottime */
@@ -49,7 +56,8 @@ struct tslot {
     u64 thread_start_ns;   /* task->start_boottime of this thread */
     struct pkey proc;      /* the process the thread belongs to */
     u32 tid;               /* thread id in the distro pid namespace (informational) */
-    u32 pad;
+    u16 prev;              /* bigrams: code of the previous observed call or marker */
+    u16 pad;
 };
 
 BPF_HASH(excluded, u32, u8, 64);        /* distro tgids of our own collectors */
@@ -104,8 +112,10 @@ static __always_inline int resolve(struct pkey *k, u32 *level_out, u32 *cpid_out
 }
 
 /* Ensures the current thread has a slot for process k (called for attributed,
- * non-excluded events only). */
-static __always_inline void thread_touch(const struct pkey *k)
+ * non-excluded events only). Returns the slot, or NULL when the slot map is
+ * full; *created is 1 when a new slot was made (a replaced stale slot is a
+ * new thread). A capability that keeps state in the slot initialises it. */
+static __always_inline struct tslot *thread_touch(const struct pkey *k, int *created)
 {
     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u32 tid = (u32)bpf_get_current_pid_tgid();
@@ -115,11 +125,12 @@ static __always_inline void thread_touch(const struct pkey *k)
     struct pid *tp = NULL;
     struct upid up = {};
 
+    *created = 0;
     bpf_probe_read_kernel(&start, sizeof(start), &task->start_boottime);
     s = threads.lookup(&tid);
     if (s) {
         if (s->thread_start_ns == start)
-            return;
+            return s;
         hinc(H_THREAD_STALE);   /* the previous owner of this TID left without an exit */
     }
     /* Threads share the leader's pid namespaces, already checked by resolve(). */
@@ -129,8 +140,12 @@ static __always_inline void thread_touch(const struct pkey *k)
     ns.thread_start_ns = start;
     ns.proc = *k;
     ns.tid = (u32)up.nr;
-    if (threads.update(&tid, &ns) != 0)
+    if (threads.update(&tid, &ns) != 0) {
         hinc(H_THREAD_FULL);
+        return NULL;
+    }
+    *created = 1;
+    return threads.lookup(&tid);
 }
 
 /* sched_process_exit runs for every exiting thread: drop its slot. */

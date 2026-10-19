@@ -80,3 +80,103 @@ def truth(fake):
     """The live process state a correct consumer must hold after a complete snapshot."""
     from processpulse.snapshots import key_tuple
     return {key_tuple(p["key"]): p for p in fake.procs.values()}
+
+
+# --- S2 bigram records (consumer/validator tests only) ----------------------
+
+class BigramFake(FakeCollector):
+    """FakeCollector plus a pair table {(a, b): n} and pairs_lost per process."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.pairs = {}
+        self.lost = {}
+
+    def add(self, tgid, **counts):
+        super().add(tgid, **counts)
+        self.pairs[tgid] = {}
+        self.lost[tgid] = 0
+
+    def step_pair(self, tgid, a, b, n=1):
+        """n recorded pairs (a, b); their second element is counted too."""
+        self.bump(tgid, b, n)
+        t = self.pairs[tgid]
+        t[(a, b)] = t.get((a, b), 0) + n
+
+    def lose_pair(self, tgid, syscall, n=1):
+        """n entries counted whose pairs were lost (R-LOSS rows 2 and 3)."""
+        self.bump(tgid, syscall, n)
+        self.lost[tgid] += n
+
+
+def pair_truth(fake):
+    """The pair tables a correct consumer must hold after a complete snapshot."""
+    from processpulse.snapshots import key_tuple
+    return {key_tuple(p["key"]): fake.pairs[t] for t, p in fake.procs.items()}
+
+
+def bigram_state_truth(fake):
+    """truth(fake) with the per-process bigram fields of an available capability."""
+    return {k: dict(p, pairs_lost=fake.lost[p["key"]["tgid"]], bigrams_err=None)
+            for k, p in truth(fake).items()}
+
+
+class BigramStandIn:
+    """Test-only producer of S2 bigram snapshots around the S0 V2Emitter.
+
+    It adds the bigrams capability to every snapshot the S0 emitter builds, so
+    the schema and the Reconstructor can be tested before the real producer
+    exists (a later S2 step). A table is emitted with its process's bpf_proc
+    (design §3.7); end totals cover the committed state.
+    """
+
+    def __init__(self, fake, run_id="run-b", status="ok", err=None, reason=None,
+                 max_items=None, limit=None):
+        from processpulse.snapshots import BIGRAM_HEALTH_FIELDS, V2Emitter
+        self.em = V2Emitter(fake, run_id=run_id)
+        self.fake = fake
+        self.status, self.err, self.reason = status, err, reason
+        self.part_args = {k: v for k, v in (("max_items", max_items), ("limit", limit)) if v}
+        self.health = dict.fromkeys(BIGRAM_HEALTH_FIELDS, 0)
+        self.live = {}              # key tuple -> (table, pairs_lost), committed
+        self.drain = False          # mark the next successful snapshot drained
+
+    def build(self, resource_seq=None):
+        from processpulse.snapshots import bigram_parts, bigram_totals, key_tuple
+        recs, done = self.em.build(resource_seq=resource_seq)
+        begin, end = recs[0], recs[-1]
+        seq, ok, avail = begin["seq"], end["status"] == "ok", self.status == "ok"
+        begin["capabilities"]["bigrams"] = {
+            "status": self.status,
+            "epoch": dict(begin["capabilities"]["counts"]["epoch"]) if avail else None,
+            "err": self.err, "reason": self.reason}
+        procs = [r for r in recs if r["type"] == "bpf_proc"]
+        recl = [r for r in recs if r["type"] == "bpf_reclaimed"]
+        live = {} if begin["keyframe"] else dict(self.live)
+        for r in recl:
+            for k in r["keys"]:
+                live.pop(key_tuple(k), None)
+        parts = []
+        for p in procs:
+            tgid = p["key"]["tgid"]
+            if avail:
+                table, lost = dict(self.fake.pairs[tgid]), self.fake.lost[tgid]
+                p["pairs_lost"], p["bigrams_err"] = lost, None
+                parts += bigram_parts(seq, p["key"], table, **self.part_args)
+                live[key_tuple(p["key"])] = (table, lost)
+            else:
+                p["pairs_lost"], p["bigrams_err"] = None, self.err
+        if not ok:
+            live = self.live
+        end["bigram_records"] = len(parts)
+        end["totals"]["bigrams"] = (bigram_totals([{"pairs_lost": n} for _, n in live.values()],
+                                                  [t for t, _ in live.values()])
+                                    if avail else None)
+        end["bigram_health"] = dict(self.health) if ok and avail else None
+        end["drained"] = ok and self.drain
+
+        def commit():
+            done()
+            if ok:
+                self.live = live
+        return [begin] + procs + parts + recl + [end], commit

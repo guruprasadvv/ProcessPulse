@@ -1,0 +1,120 @@
+{
+  "run_dir": "/mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project/results/raw/m1b-s0-10min-20261019T042927",
+  "mode": "v2",
+  "files": {
+    "resource.jsonl": {
+      "lines": 21076,
+      "valid": 21076,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 11677656,
+      "max_line_bytes": 643,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "20ab44e39d534336fe094977df52558492e25aa9f4738b49a2c0416b66c2dba6"
+    },
+    "bpf.jsonl": {
+      "lines": 1579,
+      "valid": 1579,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 819973,
+      "max_line_bytes": 2100,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "b233f3e5e4bdcff26742ce02a000a8e53e44c1aa6936de33a862bbc95ec6590d"
+    },
+    "health.jsonl": {
+      "lines": 616,
+      "valid": 616,
+      "invalid": 0,
+      "unterminated_tail": 0,
+      "bytes": 229618,
+      "max_line_bytes": 374,
+      "legacy_v1_oversize": 0,
+      "legacy_v1_cr": 0,
+      "sha256": "015699b2877bf6a2da0f4e0a900bc9faa1311144fd5ff00d291552ca2bc8fcb2"
+    }
+  },
+  "errors": [],
+  "checks": {
+    "line_limits": {
+      "ok": true,
+      "policy": "v2: every line within the byte rule"
+    },
+    "resource_framing": {
+      "ok": true,
+      "samples": 616,
+      "problems": []
+    },
+    "snapshot_protocol": {
+      "ok": true,
+      "stats": {
+        "snapshots_complete": 616,
+        "snapshots_failed": 0,
+        "snapshots_incomplete": 0,
+        "keyframes": 11,
+        "framing_errors": 0,
+        "seq_gaps": 0,
+        "epoch_changes": 0,
+        "totals_mismatch": 0,
+        "invalidations": 0,
+        "keyframe_schedule_violations": 0
+      },
+      "final_state_valid": true,
+      "tracked_at_end": 6,
+      "problems": []
+    },
+    "alignment": {
+      "ok": true,
+      "samples": 616,
+      "snapshots": 616,
+      "health": 616
+    },
+    "span": {
+      "ok": true,
+      "span_s": 615.006,
+      "required_s": 600.0
+    },
+    "collector_stream_clean": {
+      "ok": true,
+      "nonzero": {}
+    },
+    "schema": {
+      "ok": true
+    }
+  },
+  "line_limits": {
+    "max_record_bytes": 65536,
+    "legacy_v1_oversize": 0,
+    "legacy_v1_cr": 0,
+    "max_line_bytes": 2100
+  },
+  "loss_counters": {
+    "resource_dropped_samples": 0,
+    "resource_restarts": 0,
+    "proc_gone_total": 0,
+    "proc_denied_total": 0,
+    "proc_parse_errors_total": 0,
+    "proc_read_errors_total": 0,
+    "max_late_ms": 0.753,
+    "max_sample_dur_ms": 20.537,
+    "bpf_failed_snapshots": 0,
+    "bpf_counts_map_full": 0,
+    "bpf_info_map_full": 0,
+    "bpf_vanished_entries": 0,
+    "bpf_unresolved_events": 87,
+    "bpf_self_excluded_events": 100089,
+    "bpf_exit_events": 97,
+    "bpf_reclaimed": 87,
+    "bpf_map_entries": 6,
+    "bpf_max_unreported_entries": 0,
+    "bpf_max_snapshot_ms": 17.012
+  },
+  "totals": {
+    "lines": 23271,
+    "valid": 23271,
+    "invalid": 0
+  },
+  "ok": true
+}

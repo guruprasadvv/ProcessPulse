@@ -1,0 +1,250 @@
+{
+  "reps": 10,
+  "ok": true,
+  "configs": [
+    {
+      "config": "test_exact_pairs[openat-1]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 2,
+      "observed_entries": [
+        2
+      ],
+      "median_time_s": 10.824,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[openat-1000]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 1001,
+      "observed_entries": [
+        1001
+      ],
+      "median_time_s": 0.038,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[open-1]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 2,
+      "observed_entries": [
+        2
+      ],
+      "median_time_s": 0.035,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[open-1000]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 1001,
+      "observed_entries": [
+        1001
+      ],
+      "median_time_s": 0.041,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[execve-1]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 2,
+      "observed_entries": [
+        2
+      ],
+      "median_time_s": 0.04,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[execve-1000]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 1001,
+      "observed_entries": [
+        1001
+      ],
+      "median_time_s": 0.049,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[clone-1]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 2,
+      "observed_entries": [
+        2
+      ],
+      "median_time_s": 0.042,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs[clone-1000]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 1001,
+      "observed_entries": [
+        1001
+      ],
+      "median_time_s": 0.56,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs_100000[openat]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 100001,
+      "observed_entries": [
+        100001
+      ],
+      "median_time_s": 0.433,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs_100000[execve]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 100001,
+      "observed_entries": [
+        100001
+      ],
+      "median_time_s": 0.447,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs_100000[clone]",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 100001,
+      "observed_entries": [
+        100001
+      ],
+      "median_time_s": 49.206,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs_mixed_sequence",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 12,
+      "observed_entries": [
+        12
+      ],
+      "median_time_s": 0.042,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_exact_pairs_across_an_exec",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 5,
+      "observed_entries": [
+        5
+      ],
+      "median_time_s": 0.094,
+      "failures": [],
+      "ok": true
+    },
+    {
+      "config": "test_ground_truth_over_a_scope_with_exit_and_purge",
+      "runs": 10,
+      "passed": 10,
+      "expected_entries": 21,
+      "observed_entries": [
+        21
+      ],
+      "median_time_s": 0.954,
+      "failures": [],
+      "ok": true
+    }
+  ],
+  "equivalence": {
+    "baseline": "results/acceptance/m1b/s1/equivalence-post-s1.json",
+    "ok": true,
+    "runs": [
+      {
+        "run": "01",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "02",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "03",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "04",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "05",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "06",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "07",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "08",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "09",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      },
+      {
+        "run": "10",
+        "fields": 34,
+        "identical": 34,
+        "different": [],
+        "ok": true
+      }
+    ]
+  }
+}

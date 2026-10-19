@@ -1,0 +1,5 @@
+date: 2026-10-19T09:39:11+00:00
+command: make check
+gcc -std=c11 -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L -Wformat=2 -Wconversion -Wshadow -Wcast-qual -O2 -fsyntax-only src/collector.c src/procfs.c src/jsonl.c
+gcc -std=c11 -Wall -Wextra -Wpedantic -D_POSIX_C_SOURCE=200809L -fanalyzer -O1 -fsyntax-only src/collector.c src/procfs.c src/jsonl.c
+rc=0

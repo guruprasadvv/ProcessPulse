@@ -33,11 +33,14 @@ _TYPES = {
 _SUPPORTED = {
     "$schema", "$id", "$ref", "$defs", "title", "description", "type", "required",
     "properties", "additionalProperties", "enum", "const", "minimum", "maximum", "pattern",
-    "items", "oneOf",
+    "items", "maxItems", "oneOf",
 }
 
 RECORD_TYPES = ("sample_begin", "proc", "sample_end", "syscall_snapshot", "health")
-RECORD_TYPES_V2 = ("bpf_snapshot_begin", "bpf_proc", "bpf_reclaimed", "bpf_snapshot_end")
+RECORD_TYPES_V2 = ("bpf_snapshot_begin", "bpf_proc", "bpf_bigrams", "bpf_reclaimed",
+                   "bpf_snapshot_end")
+# Additive S2 fields of a bpf_snapshot_end (plus totals.bigrams): all or none.
+END_BIGRAM_FIELDS = ("bigram_records", "bigram_health", "drained")
 
 
 def load_schema(path=SCHEMA_PATH):
@@ -124,6 +127,8 @@ class Validator:
                     self._validate(v, props[k], f"{path}.{k}", out, defs)
                 elif node.get("additionalProperties") is False:
                     out.append(f"{path}: unexpected field {k!r}")
+        if isinstance(value, list) and "maxItems" in node and len(value) > node["maxItems"]:
+            out.append(f"{path}: {len(value)} items > maxItems {node['maxItems']}")
         if isinstance(value, list) and "items" in node:
             for i, item in enumerate(value):
                 self._validate(item, node["items"], f"{path}[{i}]", out, defs)
@@ -168,9 +173,49 @@ def semantic_errors(record):
                 out.append("bpf_snapshot_end: status failed carries no loss / health")
             if record["procs_emitted"] or record["reclaimed_records"] or record["reclaimed_keys"]:
                 out.append("bpf_snapshot_end: status failed carries no records")
+        out.extend(_end_bigram_errors(record))
     elif record.get("type") == "bpf_reclaimed":
         if not record["keys"]:
             out.append("bpf_reclaimed: keys must not be empty")
+    elif record.get("type") == "bpf_bigrams":
+        if record["part"] >= record["parts"]:
+            out.append("bpf_bigrams: part must be < parts")
+        if not record["pairs"] and record["parts"] != 1:
+            out.append("bpf_bigrams: only a one-part table may be empty")
+        ab = [(p["a"], p["b"]) for p in record["pairs"]]
+        if len(set(ab)) != len(ab):
+            out.append("bpf_bigrams: duplicate pair")
+    elif record.get("type") == "bpf_proc":
+        if ("pairs_lost" in record) != ("bigrams_err" in record):
+            out.append("bpf_proc: pairs_lost and bigrams_err are present together or not at all")
+        elif "pairs_lost" in record and \
+                (record["pairs_lost"] is None) == (record["bigrams_err"] is None):
+            out.append("bpf_proc: exactly one of pairs_lost / bigrams_err must be set")
+    elif record.get("type") == "bpf_snapshot_begin":
+        cap = record["capabilities"].get("bigrams")
+        if cap is not None:
+            if cap["status"] == "ok":
+                if cap["err"] is not None or cap["reason"] is not None:
+                    out.append("bpf_snapshot_begin: bigrams ok carries no err / reason")
+                if cap["epoch"] != record["capabilities"]["counts"]["epoch"]:
+                    out.append("bpf_snapshot_begin: bigrams epoch must equal the counts epoch")
+            elif cap["epoch"] is not None or cap["err"] is None or cap["reason"] is None:
+                out.append("bpf_snapshot_begin: unavailable bigrams need err and reason, no epoch")
+    return out
+
+
+def _end_bigram_errors(end):
+    present = [f in end for f in END_BIGRAM_FIELDS] + ["bigrams" in end["totals"]]
+    if not any(present):
+        return []
+    if not all(present):
+        return ["bpf_snapshot_end: bigram fields are present together or not at all"]
+    out = []
+    if end["status"] == "failed":
+        if end["bigram_records"] or end["bigram_health"] is not None or end["drained"]:
+            out.append("bpf_snapshot_end: status failed carries no bigram records, health or drain")
+    elif (end["totals"]["bigrams"] is None) != (end["bigram_health"] is None):
+        out.append("bpf_snapshot_end: bigram totals and health are null together")
     return out
 
 

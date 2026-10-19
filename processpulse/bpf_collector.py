@@ -8,8 +8,19 @@ One start() performs exactly two BCC compilations, both recorded in
   2. "unified": ONE program assembled from bpf/common.h, the source of every
      enabled capability, bpf/core.bpf.c and the generated per-syscall probes,
      with -DPPC_CAP_<NAME> per capability.
-S1 implements one capability, "counts" (the M1 syscall-entry counters). The
-names of later capabilities are reserved and refused until their stage.
+Capabilities: "counts" (the M1 syscall-entry counters, S1) and "bigrams"
+(pairs of consecutive observed calls per thread, S2.3; requires "counts",
+adds no tracepoint). The names of later capabilities are reserved and
+refused until their stage.
+
+With "bigrams" the program is armed right after attach (arm=True): entries
+before arming are counted but their pairs are lost and counted (U2a).
+read_bigrams() reads the bigram map, groups the raw entries by process and
+decodes them (processpulse.bigrams); zero-count entries are dropped and
+reported (P-ZERO). bigram_health() returns the end-record health fields.
+Exit reclaim requires the counts, pairs_lost and pair sum to be unchanged
+since the exit report and deletes the key's bigram entries with it;
+exclude() purges them and adds them to the purge totals.
 
 snapshot() returns the M1 schema-v1 syscall_snapshot record (unchanged);
 exited processes are reported once and reclaimed at the next snapshot if
@@ -41,19 +52,27 @@ BPF_DIR = os.path.join(REPO_ROOT, "bpf")
 
 SYSCALLS = VOCABULARY.syscalls
 # health[] indices in bpf/common.h. The first five are the M1 fields of the
-# v1 syscall_health record; the rest are reported by thread_health().
+# v1 syscall_health record; 5-8 are reported by thread_health(), 9-11 (kept
+# by the bigrams capability only) by bigram_health().
 HEALTH_FIELDS = ("counts_map_full", "info_map_full", "unresolved_events", "self_excluded_events",
                  "exit_events", "thread_map_full", "thread_slot_stale", "thread_slots_cleaned",
-                 "exec_refreshes")
+                 "exec_refreshes", "bigram_map_full", "bigram_dropped", "pre_arm_events")
 V1_HEALTH_FIELDS = HEALTH_FIELDS[:5]
+THREAD_HEALTH_FIELDS = HEALTH_FIELDS[5:9]
+# The bpf_snapshot_end.bigram_health fields (processpulse.snapshots.BIGRAM_HEALTH_FIELDS).
+BIGRAM_HEALTH = ("bigram_dropped", "bigram_map_full", "thread_map_full", "pre_arm_events",
+                 "thread_slot_stale", "purged_counts", "purged_pairs", "purged_pairs_lost")
 
 SCHED_TRACEPOINTS = ("sched:sched_process_exit", "sched:sched_process_exec")
 CAPABILITIES = {
     # name: (source in bpf/, compile-time flag, tracepoints of its own)
     "counts": ("syscall_counter.bpf.c", "PPC_CAP_COUNTS",
                tuple(f"syscalls:sys_enter_{s}" for s in SYSCALLS)),
+    "bigrams": ("bigrams.bpf.c", "PPC_CAP_BIGRAMS", ()),
 }
-RESERVED_CAPABILITIES = ("bigrams", "priv", "net")    # later M1b stages
+REQUIRES = {"bigrams": ("counts",)}                    # U9
+SOURCE_ORDER = ("bigrams", "counts")                   # the counter calls the bigram hooks
+RESERVED_CAPABILITIES = ("priv", "net")                # later M1b stages
 
 SYS_GETPID = {"x86_64": 39, "aarch64": 172}
 
@@ -84,6 +103,10 @@ def check_capabilities(capabilities):
             raise ValueError(f"capability {c!r} is not implemented in this stage")
         if c not in CAPABILITIES:
             raise ValueError(f"unknown capability {c!r}")
+    for c in caps:
+        missing = [r for r in REQUIRES.get(c, ()) if r not in caps]
+        if missing:
+            raise ValueError(f"capability {c!r} requires {missing}")
     return tuple(c for c in CAPABILITIES if c in caps)
 
 
@@ -97,7 +120,7 @@ def build_source(capabilities=("counts",)):
     """The single compilation unit: common.h, capabilities, core, probes."""
     caps = check_capabilities(capabilities)
     parts = [_read("common.h")]
-    parts += [_read(CAPABILITIES[c][0]) for c in caps]
+    parts += [_read(CAPABILITIES[c][0]) for c in SOURCE_ORDER if c in caps]
     parts.append(_read("core.bpf.c"))
     if "counts" in caps:
         parts += [f"\nTRACEPOINT_PROBE(syscalls, sys_enter_{name})\n{{\n    return count_syscall({i});\n}}\n"
@@ -138,10 +161,17 @@ def family_totals(counts):
 
 class BpfCollector:
     def __init__(self, capabilities=("counts",), max_procs=16384, max_threads=32768,
-                 distro_inum_override=None, resolver=None, track_removals=False):
+                 distro_inum_override=None, resolver=None, track_removals=False,
+                 max_pairs=131072, arm=True):
         self.capabilities = check_capabilities(capabilities)
+        self.has_bigrams = "bigrams" in self.capabilities
         self.max_procs = max_procs
         self.max_threads = max_threads
+        self.max_pairs = max_pairs
+        self._arm_at_start = arm
+        self.armed_boot_ns = None
+        self.purged = {"counts": 0, "pairs": 0, "pairs_lost": 0}   # bigrams: self-exclusion purges
+        self.last_bigrams = None   # bigrams: read_bigrams() result of the last snapshot()
         self.distro_inum_override = distro_inum_override   # tests: force unresolved
         self.resolver = resolver or CgroupResolver()
         self.track_removals = track_removals
@@ -166,6 +196,8 @@ class BpfCollector:
         cflags = [f"-DDISTRO_LEVEL={self.distro_level}", f"-DDISTRO_PIDNS_INUM={inum}U",
                   f"-DMAX_PROCS={self.max_procs}", f"-DMAX_THREADS={self.max_threads}",
                   f"-DNSYSCALLS={len(SYSCALLS)}"]
+        if self.has_bigrams:
+            cflags.append(f"-DMAX_PAIRS={self.max_pairs}")
         cflags += [f"-D{CAPABILITIES[c][1]}=1" for c in self.capabilities]
         t0 = time.monotonic_ns()
         self.b = BPF(text=build_source(self.capabilities), cflags=cflags)
@@ -177,8 +209,26 @@ class BpfCollector:
             self.close()
             raise RuntimeError(f"attached tracepoints differ from the capability plan: "
                                f"missing {sorted(set(want) - set(got))}, extra {sorted(set(got) - set(want))}")
+        if self.has_bigrams and self._arm_at_start:
+            self.arm()
         self.exclude(os.getpid())
         return self
+
+    def arm(self):
+        """Starts pair tracking. Threads that started (CLOCK_BOOTTIME) before this
+        moment begin with START_ATTACH, later ones with START_NEW. armed_boot_ns is
+        written before armed, so no event sees armed with a stale boundary."""
+        if not self.has_bigrams:
+            raise RuntimeError("arm() needs the bigrams capability")
+        table, zero = self.b["bglobal"], ctypes.c_int(0)
+        st = table[zero]
+        st.armed_boot_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+        table[zero] = st
+        st = table[zero]
+        st.armed = 1
+        table[zero] = st
+        self.armed_boot_ns = st.armed_boot_ns
+        return self.armed_boot_ns
 
     def close(self):
         if self.b is not None:
@@ -192,29 +242,72 @@ class BpfCollector:
         return [k.decode() if isinstance(k, bytes) else k for k in self.b.tracepoint_fds]
 
     def build_info(self):
-        return {"capabilities": list(self.capabilities), "compilations": list(self.compilations),
+        info = {"capabilities": list(self.capabilities), "compilations": list(self.compilations),
                 "tracepoints": sorted(self.attached_tracepoints()),
                 "open_tracepoints": self.b.num_open_tracepoints() if self.b is not None else 0,
                 "vocabulary": VOCABULARY.id, "max_procs": self.max_procs,
                 "max_threads": self.max_threads}
+        if self.has_bigrams:
+            info.update({"max_pairs": self.max_pairs, "armed_boot_ns": self.armed_boot_ns})
+        if self.b is not None:
+            info["maps"] = self.map_memory()
+        return info
+
+    def map_memory(self):
+        """Per map: max_entries and memlock (bytes) from /proc/self/fdinfo, or None
+        where the kernel does not report the field (hypothesis H-MEMLOCK)."""
+        out = {}
+        for name in ("counts", "info", "threads", "excluded", "health", "bigrams", "bglobal"):
+            try:
+                fd = self.b[name].map_fd
+            except KeyError:
+                continue
+            fields = {}
+            try:
+                with open(f"/proc/self/fdinfo/{fd}") as f:
+                    for line in f:
+                        k, _, v = line.partition(":")
+                        fields[k.strip()] = v.strip()
+            except OSError:
+                pass
+            out[name] = {k: int(fields[k]) if k in fields else None
+                         for k in ("max_entries", "memlock")}
+        return out
 
     # --- exclusion and removal bookkeeping ---------------------------------
     def exclude(self, tgid):
         """Stops counting tgid (our own collectors) and purges entries it made
         before the exclusion took effect (e.g. the pre-exec execve of a freshly
         spawned collector), including its thread slots. Purged events stay
-        visible in self_excluded_events."""
+        visible in self_excluded_events. With bigrams its pair entries are
+        purged too and added to the purge totals (purged_counts, purged_pairs,
+        purged_pairs_lost); the exclusion is set first, so the entries are read
+        after it took effect (P-PURGE; a probe already past the exclusion
+        check can still be in flight)."""
         self.b["excluded"][ctypes.c_uint(tgid)] = ctypes.c_ubyte(1)
         counts_t, info_t, threads_t = self.b["counts"], self.b["info"], self.b["threads"]
         for k, v in list(counts_t.items()):
             if k.tgid == tgid:
-                self._purged_self += sum(v.c[i] for i in range(len(SYSCALLS)))
+                n = sum(v.c[i] for i in range(len(SYSCALLS)))
+                self._purged_self += n
+                if self.has_bigrams:
+                    self.purged["counts"] += n
+                    self.purged["pairs_lost"] += v.pairs_lost
                 for table in (counts_t, info_t):
                     try:
                         del table[k]
                     except KeyError:
                         pass
                 self._note_removed("self_excluded", (k.start_ns, k.tgid))
+        if self.has_bigrams:
+            pairs_t = self.b["bigrams"]
+            for k, v in list(pairs_t.items()):
+                if k.proc.tgid == tgid:
+                    self.purged["pairs"] += v.value
+                    try:
+                        del pairs_t[k]
+                    except KeyError:
+                        pass
         for tid, s in list(threads_t.items()):
             if s.proc.tgid == tgid:
                 try:
@@ -274,10 +367,67 @@ class BpfCollector:
 
     def thread_health(self):
         h = self._health_all()
-        out = {k: h[k] for k in HEALTH_FIELDS[5:]}
+        out = {k: h[k] for k in THREAD_HEALTH_FIELDS}
         out["thread_slots"] = len(self.b["threads"].items())
         out["thread_capacity"] = self.max_threads
         return out
+
+    # --- bigrams ------------------------------------------------------------
+    def global_losses(self):
+        """The global loss counters the exact I-B3/I-B4 checks depend on
+        (processpulse.bigrams.GLOBAL_LOSS_FIELDS), cumulative since this load;
+        compare two readings with bigrams.loss_window()."""
+        h = self._health_all()
+        return {k: h[k] for k in ("counts_map_full", "thread_map_full", "bigram_map_full",
+                                  "pre_arm_events")}
+
+    def bigram_health(self):
+        """The bpf_snapshot_end.bigram_health fields (cumulative)."""
+        if not self.has_bigrams:
+            raise RuntimeError("bigram_health() needs the bigrams capability")
+        h = self._health_all()
+        out = {k: h[k] for k in BIGRAM_HEALTH[:5]}
+        out.update({"purged_counts": self.purged["counts"], "purged_pairs": self.purged["pairs"],
+                    "purged_pairs_lost": self.purged["pairs_lost"]})
+        return {k: out[k] for k in BIGRAM_HEALTH}
+
+    def _read_bigrams_raw(self):
+        """(result, raw): the decoded per-process tables and, per process, the raw
+        map keys (for deletion). Map reads are sequential, not atomic: values of a
+        process that is still running may be mutually inconsistent."""
+        from .bigrams import decode_entries          # here: bigrams -> snapshots -> syscalls -> us
+        if not self.has_bigrams:
+            raise RuntimeError("read_bigrams() needs the bigrams capability")
+        t0 = time.monotonic_ns()
+        table = self.b["bigrams"]
+        try:
+            items, method = list(table.items_lookup_batch()), "batch"
+        except Exception:                         # H-BATCH: fall back to one lookup per key
+            items, method = list(table.items()), "items"
+        lost = {(k.start_ns, k.tgid): v.pairs_lost for k, v in self.b["counts"].items()}
+        raw = {}
+        for k, v in items:
+            raw.setdefault((k.proc.start_ns, k.proc.tgid), []).append((k.a, k.b, v.value, k))
+        tables = {key: {} for key in lost}
+        zeros = orphans = 0
+        for key, entries in raw.items():
+            decoded, z = decode_entries([(a, b, n) for a, b, n, _k in entries])
+            zeros += z
+            if key in lost:
+                tables[key] = decoded
+            else:
+                orphans += len(entries)            # no counts entry: not a process table
+        return ({"tables": tables, "pairs_lost": lost, "zero_entries": zeros,
+                 "orphan_entries": orphans, "entries": len(items), "method": method,
+                 "read_ns": time.monotonic_ns() - t0}, raw)
+
+    def read_bigrams(self):
+        """Pair tables grouped by process (start_ns, tgid), decoded to names:
+        {"tables": {key: {(a, b): n}} (an empty table for a process with a counts
+        entry but no pair), "pairs_lost": {key: n}, "zero_entries", "orphan_entries",
+        "entries", "method" ("batch" or "items"), "read_ns"}. Zero-count entries
+        are dropped (P-ZERO) and counted; they are not loss."""
+        return self._read_bigrams_raw()[0]
 
     # --- snapshot (schema v1, unchanged from M1) ---------------------------
     def snapshot(self, resource_seq=None):
@@ -288,11 +438,23 @@ class BpfCollector:
         infos = {(k.start_ns, k.tgid): (v.cgroup_id, v.host_tgid, v.level, v.container_pid,
                                         bool(v.exited), bytes(v.comm).split(b"\0", 1)[0])
                  for k, v in info_t.items()}
+        raw_pairs = {}
+        if self.has_bigrams:
+            self.last_bigrams, raw_pairs = self._read_bigrams_raw()
+            bg = self.last_bigrams
+
+            def fingerprint(key):              # counts, pairs_lost and pair sum (design §3.4)
+                if key not in counts:
+                    return None
+                return (counts[key], bg["pairs_lost"].get(key),
+                        sum(bg["tables"].get(key, {}).values()))
+        else:
+            fingerprint = counts.get
 
         # Phase 2 of exit handling: reclaim entries reported as exited last time
-        # whose counts have not changed since (so no increment is lost).
+        # whose values have not changed since (so no increment is lost).
         for key, prev in list(self._reported_exit.items()):
-            cur = counts.get(key)
+            cur = fingerprint(key)
             if cur is None or cur == prev:
                 k = counts_t.Key(key[0], key[1], 0)
                 for table in (counts_t, info_t):
@@ -300,6 +462,15 @@ class BpfCollector:
                         del table[k]
                     except KeyError:
                         pass
+                if self.has_bigrams:
+                    pairs_t = self.b["bigrams"]
+                    for _a, _b, _n, bk in raw_pairs.get(key, ()):
+                        try:
+                            del pairs_t[bk]
+                        except KeyError:
+                            pass
+                    self.last_bigrams["tables"].pop(key, None)
+                    self.last_bigrams["pairs_lost"].pop(key, None)
                 counts.pop(key, None)
                 infos.pop(key, None)
                 del self._reported_exit[key]
@@ -315,7 +486,7 @@ class BpfCollector:
                 continue   # info insert pending or map full (counted in health)
             cgroup_id, host_tgid, level, cpid, exited, comm = info
             if exited:
-                self._reported_exit[key] = cvals
+                self._reported_exit[key] = fingerprint(key)
             procs.append({
                 "key": {"boot_id": self.boot_id, "pidns_ino": self.distro_pidns_ino,
                         "tgid": key[1], "start_ticks": start_ticks_from_ns(key[0], self.ticks)},

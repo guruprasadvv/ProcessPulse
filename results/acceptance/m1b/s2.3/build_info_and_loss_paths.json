@@ -1,0 +1,147 @@
+{
+  "build_info": {
+    "capabilities": [
+      "counts",
+      "bigrams"
+    ],
+    "compilations": [
+      {
+        "name": "calibrate",
+        "ns": 9806982773
+      },
+      {
+        "name": "unified",
+        "ns": 6695293756
+      }
+    ],
+    "open_tracepoints": 11,
+    "vocabulary": "v1-3aba869d1752",
+    "max_procs": 16384,
+    "max_threads": 32768,
+    "max_pairs": 131072,
+    "maps": {
+      "counts": {
+        "max_entries": 16384,
+        "memlock": 2625216
+      },
+      "info": {
+        "max_entries": 16384,
+        "memlock": 2100416
+      },
+      "threads": {
+        "max_entries": 32768,
+        "memlock": 3410752
+      },
+      "excluded": {
+        "max_entries": 64,
+        "memlock": 7616
+      },
+      "health": {
+        "max_entries": 12,
+        "memlock": 400
+      },
+      "bigrams": {
+        "max_entries": 131072,
+        "memlock": 12585664
+      },
+      "bglobal": {
+        "max_entries": 1,
+        "memlock": 328
+      }
+    }
+  },
+  "no_loss_helper": {
+    "counts": {
+      "execve": 1,
+      "open": 2,
+      "openat": 4
+    },
+    "pairs_lost": 0,
+    "pairs": {
+      "EXEC->openat": 1,
+      "START_NEW->execve": 1,
+      "open->open": 1,
+      "open->openat": 1,
+      "openat->open": 1,
+      "openat->openat": 2
+    }
+  },
+  "read": {
+    "method": "batch",
+    "entries": 6,
+    "zero_entries": 0,
+    "orphan_entries": 0,
+    "read_ns": 1157327
+  },
+  "health": {
+    "bigram_dropped": 2,
+    "bigram_map_full": 0,
+    "thread_map_full": 0,
+    "pre_arm_events": 2,
+    "thread_slot_stale": 0,
+    "purged_counts": 2,
+    "purged_pairs": 0,
+    "purged_pairs_lost": 2
+  },
+  "row1_counts_full": {
+    "dummies_to_fill": 256,
+    "after": {
+      "counts": {
+        "open": 1
+      },
+      "pairs_lost": 0,
+      "pairs": {
+        "START_LOST->open": 1
+      }
+    },
+    "health_delta_while_full": {
+      "counts_map_full": 3,
+      "thread_map_full": 0,
+      "bigram_map_full": 0,
+      "bigram_dropped": 3,
+      "pre_arm_events": 0
+    }
+  },
+  "row2_thread_full": {
+    "dummies_to_fill": 256,
+    "after": {
+      "counts": {
+        "execve": 1,
+        "open": 1,
+        "openat": 2
+      },
+      "pairs_lost": 3,
+      "pairs": {
+        "START_LOST->open": 1
+      }
+    },
+    "health_delta_while_full": {
+      "counts_map_full": 0,
+      "thread_map_full": 4,
+      "bigram_map_full": 0,
+      "bigram_dropped": 3,
+      "pre_arm_events": 0
+    }
+  },
+  "row3_bigram_full": {
+    "dummies_to_fill": 254,
+    "after": {
+      "counts": {
+        "execve": 1,
+        "open": 1,
+        "openat": 2
+      },
+      "pairs_lost": 3,
+      "pairs": {
+        "openat->open": 1
+      }
+    },
+    "health_delta_while_full": {
+      "counts_map_full": 0,
+      "thread_map_full": 0,
+      "bigram_map_full": 3,
+      "bigram_dropped": 3,
+      "pre_arm_events": 0
+    }
+  }
+}

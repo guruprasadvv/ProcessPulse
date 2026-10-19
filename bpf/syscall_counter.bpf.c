@@ -17,6 +17,9 @@
 
 struct pcounts {
     u64 c[NSYSCALLS];
+#ifdef PPC_CAP_BIGRAMS
+    u64 pairs_lost;        /* counted entries whose pair was not recorded (U7) */
+#endif
 };
 
 struct pinfo {
@@ -38,6 +41,8 @@ static __always_inline int count_syscall(int sc)
     struct pcounts zero = {};
     struct pcounts *c;
     struct pinfo *pi;
+    struct tslot *slot;
+    int created = 0;
     u32 level = 0, cpid = 0;
 
     if (resolve(&k, &level, &cpid) != 0) {
@@ -48,13 +53,23 @@ static __always_inline int count_syscall(int sc)
         hinc(H_SELF);
         return 0;
     }
-    thread_touch(&k);
+    slot = thread_touch(&k, &created);
+    (void)slot;
+#ifdef PPC_CAP_BIGRAMS
+    bigram_on_slot(slot, created);
+#endif
     c = counts.lookup_or_try_init(&k, &zero);
     if (c == NULL) {
         hinc(H_COUNTS_FULL);
+#ifdef PPC_CAP_BIGRAMS
+        bigram_count_lost(slot);
+#endif
         return 0;
     }
     __sync_fetch_and_add(&c->c[sc], 1);
+#ifdef PPC_CAP_BIGRAMS
+    bigram_on_entry(&k, slot, sc, &c->pairs_lost);
+#endif
 
     pi = info.lookup(&k);
     if (pi == NULL) {

@@ -1,0 +1,93 @@
+date: 2026-10-19T09:32:11+00:00
+bpf_stats_enabled before: 0
+ppc cgroups before: 0
+containers before: 0
+command: PYTHONUSERBASE=/home/mypc/.local python3 -m pytest -p no:cacheprovider tests/ -m privileged -v -W ignore::DeprecationWarning
+============================= test session starts ==============================
+platform linux -- Python 3.14.4, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: /mnt/c/Users/mypc/Desktop/vit/5th sem/os/os project/os project
+configfile: pytest.ini
+plugins: typeguard-4.4.4
+collecting ... collected 597 items / 522 deselected / 75 selected
+
+tests/test_agent.py::test_full_run_schema2_is_framed_and_reconstructs PASSED [  1%]
+tests/test_agent.py::test_full_run_aligns_streams_and_excludes_itself PASSED [  2%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1] PASSED      [  4%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[openat-1000] PASSED   [  5%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1] PASSED        [  6%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[open-1000] PASSED     [  8%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1] PASSED      [  9%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[execve-1000] PASSED   [ 10%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1] PASSED       [ 12%]
+tests/test_bigrams_acceptance.py::test_exact_pairs[clone-1000] PASSED    [ 13%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[openat] PASSED [ 14%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[execve] PASSED [ 16%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_100000[clone] PASSED  [ 17%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_mixed_sequence PASSED [ 18%]
+tests/test_bigrams_acceptance.py::test_exact_pairs_across_an_exec PASSED [ 20%]
+tests/test_bigrams_acceptance.py::test_ground_truth_over_a_scope_with_exit_and_purge PASSED [ 21%]
+tests/test_bigrams_bpf.py::test_two_compilations_same_tracepoints_and_one_extra_map PASSED [ 22%]
+tests/test_bigrams_bpf.py::test_counts_only_build_has_no_bigram_map_and_keeps_its_counters_at_zero PASSED [ 24%]
+tests/test_bigrams_bpf.py::test_exact_pair_deltas_for_a_scripted_sequence[1] PASSED [ 25%]
+tests/test_bigrams_bpf.py::test_exact_pair_deltas_for_a_scripted_sequence[1000] PASSED [ 26%]
+tests/test_bigrams_bpf.py::test_markers_of_a_process_started_after_arming PASSED [ 28%]
+tests/test_bigrams_bpf.py::test_attach_and_pre_arm PASSED                [ 29%]
+tests/test_bigrams_bpf.py::test_row_1_counts_map_full PASSED             [ 30%]
+tests/test_bigrams_bpf.py::test_row_2_thread_map_full PASSED             [ 32%]
+tests/test_bigrams_bpf.py::test_row_3_bigram_map_full_keeps_prev PASSED  [ 33%]
+tests/test_bigrams_bpf.py::test_exec_with_a_full_thread_map_loses_no_extra_pair PASSED [ 34%]
+tests/test_bigrams_bpf.py::test_thread_map_full_before_arming_is_counted_once PASSED [ 36%]
+tests/test_bigrams_bpf.py::test_v1_record_stays_valid_in_a_bigrams_build PASSED [ 37%]
+tests/test_bigrams_bpf.py::test_threads_start_new_segments_and_slots_are_cleaned PASSED [ 38%]
+tests/test_bigrams_bpf.py::test_leader_exec_starts_an_exec_segment PASSED [ 40%]
+tests/test_bigrams_bpf.py::test_non_leader_exec PASSED                   [ 41%]
+tests/test_bigrams_bpf.py::test_reused_tid_is_a_new_thread PASSED        [ 42%]
+tests/test_bigrams_bpf.py::test_exit_reclaims_the_pair_entries_with_the_process PASSED [ 44%]
+tests/test_bigrams_bpf.py::test_self_exclusion_purges_pairs_into_the_purge_totals PASSED [ 45%]
+tests/test_bigrams_bpf.py::test_every_map_entry_decodes_and_markers_are_never_second PASSED [ 46%]
+tests/test_bpf_collector.py::test_exactly_two_compilations_and_the_planned_tracepoints PASSED [ 48%]
+tests/test_bpf_collector.py::test_thread_slots_follow_thread_lifetime_without_touching_counts PASSED [ 49%]
+tests/test_bpf_collector.py::test_stale_slot_from_a_reused_tid_is_detected_and_replaced PASSED [ 50%]
+tests/test_bpf_collector.py::test_exec_from_a_non_leader_thread_drops_the_old_tid_slot PASSED [ 52%]
+tests/test_bpf_collector.py::test_exclusion_purges_thread_slots PASSED   [ 53%]
+tests/test_bpf_collector.py::test_exec_refreshes_comm_and_keeps_attribution PASSED [ 54%]
+tests/test_bpf_collector.py::test_rename_without_exec_is_not_refreshed PASSED [ 56%]
+tests/test_bpf_collector.py::test_cgroup_is_refreshed_at_exec_not_per_event PASSED [ 57%]
+tests/test_dit1.py::test_check1_container_visible_pid PASSED             [ 58%]
+tests/test_dit1.py::test_check2_distro_pid_agrees_everywhere PASSED      [ 60%]
+tests/test_dit1.py::test_check3_pid_namespace_identity PASSED            [ 61%]
+tests/test_dit1.py::test_check4_cgroup_and_container_id PASSED           [ 62%]
+tests/test_dit1.py::test_check5_exact_counts_and_start_time PASSED       [ 64%]
+tests/test_dit1.py::test_check6_exit_reported_once_then_reclaimed PASSED [ 65%]
+tests/test_dit1.py::test_check7_namespace_mismatch_is_unresolved PASSED  [ 66%]
+tests/test_preflight.py::test_privileged_preflight_passes PASSED         [ 68%]
+tests/test_snapshots_bpf.py::test_exit_is_emitted_once_then_reclaimed PASSED [ 69%]
+tests/test_snapshots_bpf.py::test_self_exclusion_purge_is_reported PASSED [ 70%]
+tests/test_snapshots_bpf.py::test_v1_snapshot_records_are_unchanged_by_the_removal_bookkeeping PASSED [ 72%]
+tests/test_snapshots_bpf.py::test_without_tracking_removals_do_not_accumulate PASSED [ 73%]
+tests/test_syscall_collector.py::test_calibration_matches_procfs PASSED  [ 74%]
+tests/test_syscall_collector.py::test_snapshots_are_schema_valid PASSED  [ 76%]
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1] PASSED [ 77%]
+tests/test_syscall_collector.py::test_exact_entry_counts[openat-1000] PASSED [ 78%]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1] PASSED  [ 80%]
+tests/test_syscall_collector.py::test_exact_entry_counts[open-1000] PASSED [ 81%]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1] PASSED [ 82%]
+tests/test_syscall_collector.py::test_exact_entry_counts[execve-1000] PASSED [ 84%]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1] PASSED [ 85%]
+tests/test_syscall_collector.py::test_exact_entry_counts[clone-1000] PASSED [ 86%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[openat] PASSED [ 88%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[execve] PASSED [ 89%]
+tests/test_syscall_collector.py::test_exact_entry_counts_100000[clone] PASSED [ 90%]
+tests/test_syscall_collector.py::test_identity_fields PASSED             [ 92%]
+tests/test_syscall_collector.py::test_start_ticks_match_procfs_for_1000_processes PASSED [ 93%]
+tests/test_syscall_collector.py::test_exit_reported_once_then_reclaimed PASSED [ 94%]
+tests/test_syscall_collector.py::test_own_events_are_excluded_and_counted PASSED [ 96%]
+tests/test_syscall_collector.py::test_namespace_inode_mismatch_is_unresolved_never_attributed PASSED [ 97%]
+tests/test_syscall_collector.py::test_map_full_is_counted_not_fatal PASSED [ 98%]
+tests/test_syscall_collector.py::test_kernel_timestamps_fall_between_userspace_reads PASSED [100%]
+
+================ 75 passed, 522 deselected in 276.42s (0:04:36) ================
+pytest rc=0
+bpf_stats_enabled after: 0
+ppc cgroups after: 0
+containers after: 0

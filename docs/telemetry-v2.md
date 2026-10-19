@@ -31,7 +31,7 @@ Length is always counted on encoded bytes, never on characters.
 | | v1 (`--schema 1`, M1) | v2 (`--schema 2`, S0) |
 |---|---|---|
 | BPF stream file | `syscall.jsonl` | `bpf.jsonl` |
-| Records per snapshot | one `syscall_snapshot` holding every process | `bpf_snapshot_begin`, `bpf_proc`*, `bpf_reclaimed`*, `bpf_snapshot_end` |
+| Records per snapshot | one `syscall_snapshot` holding every process | `bpf_snapshot_begin`, `bpf_proc`*, `bpf_bigrams`* (S2, §8), `bpf_reclaimed`*, `bpf_snapshot_end` |
 | Line size | unbounded (15 of 613 lines in the accepted M1 10-minute run exceed 65,536 bytes; the largest record is 311,053 bytes without its LF) | at most 65,536 bytes, enforced by the writer |
 | Processes per snapshot | all entries in the map | keyframe: all tracked; otherwise only new or changed ones |
 | Removals | implicit (an entry stops appearing) | explicit `bpf_reclaimed` with a reason |
@@ -180,7 +180,8 @@ schedule violation, at least one keyframe, and a valid state at the end. Failed 
 - The agent's default stays `--schema 1`; M1 harnesses (`run_10min.sh`,
   `overhead.py`) read `syscall.jsonl`. Switching the default is a separate decision.
 - v1 recordings keep their oversize lines; this is recorded as an M1 limitation.
-- `bpf_bigrams` and multi-capability records are not part of S0 (S2/S4).
+- `bpf_bigrams` and multi-capability records are not part of S0; the bigram
+  records are added additively in S2 (§8).
 - The C-collector bound (T-F5) is computed from constants and checked against
   real output; no real 4 KiB cgroup path was exercised.
 - The consumer has no partial recovery: any invalidation lasts until the next
@@ -190,3 +191,219 @@ schedule violation, at least one keyframe, and a valid state at the end. Failed 
 - The keyframe obligation (§4 9a) is checked only from an observed epoch start
   or an observed failed scheduled keyframe; a consumer joining mid-epoch
   cannot check the epoch's first keyframe.
+
+## 8. Bigram records (M1b S2.1: schema and consumer)
+
+Status: schema, validator, chunking rule and `Reconstructor` implemented (S2
+step 1, uncommitted). The producer (`V2Emitter` integration, agent option) and
+the BPF capability are later S2 steps; until then no agent run writes these
+records. Contract sources: M1b plan v3 D2/D5/D12/D13, the S2 design report
+§3.7, and the approved decisions U1 (additive v2 extension), U4
+(`bigram_dropped` = every lost pair), U5 (the nine-syscall vocabulary
+`v1-3aba869d1752`), U8 (schema 2 and explicit selection only) and U10 (bigram
+health and drain metadata in the end record).
+
+### 8.1 Additive rule
+
+`v` stays 2. Every new field is optional in the schema and is present **iff**
+`bpf_snapshot_begin.capabilities.bigrams` is present. A counts-only snapshot
+therefore has exactly the S0 records, fields and meanings (tested field by
+field), and a snapshot that carries any bigram field without the capability is
+rejected.
+
+### 8.2 Records
+
+| Record | Field | Meaning |
+|---|---|---|
+| begin | `capabilities.bigrams` | `{status, epoch, err, reason}`. `ok`: `epoch` equals the counts epoch (one unified BPF program, S1), `err`/`reason` null. `unavailable`: `epoch` null, `err` = `UNSUPPORTED`, `reason` set. `EIO` (plan v3 D5: failure during a run) is **reserved**: no producer path emits it yet, so the schema rejects it until a producer contract is approved. |
+| `bpf_proc` | `pairs_lost`, `bigrams_err` | `pairs_lost` = cumulative entries of this process whose pair was not recorded (R-LOSS `pairs_lost_K`). Exactly one of the two is non-null: `ok` → `pairs_lost` set, `bigrams_err` null; `unavailable` → `pairs_lost` null, `bigrams_err` = the capability's `err`. Never 0 for "unknown". |
+| `bpf_bigrams` | `key`, `part`, `parts`, `pairs` | One part of the complete cumulative pair table of `key`. `pairs` = `[{a, b, n}]`: `a` ∈ the 9 vocabulary syscalls ∪ {`START_NEW`, `START_ATTACH`, `START_LOST`, `EXEC`}; `b` ∈ the 9 syscalls only (I-B5, a schema rule); `n` ≥ 1 (a sparse table has no zero entries). At most 1,024 pairs per record (`maxItems`) and the byte rule (§1). No duplicate `(a, b)` within a table. An empty table is one part with `pairs: []`. |
+| end | `bigram_records` | Number of `bpf_bigrams` records in the snapshot. |
+| end | `totals.bigrams` | `{pairs, pairs_lost}`: Σ of every pair count and Σ `pairs_lost` over the tracked processes after the snapshot, mod 2^64. `null` iff unavailable. |
+| end | `bigram_health` | Cumulative `bigram_dropped` (every pair not recorded: R-LOSS rows 1–3 and pre-arm events), its causes `bigram_map_full`, `thread_map_full`, `pre_arm_events`, plus `thread_slot_stale` and the self-exclusion purge totals `purged_counts`, `purged_pairs`, `purged_pairs_lost`. `null` when unavailable or when the snapshot failed. |
+| end | `drained` | `true` only on the final snapshot after the probes are detached and the maps read stably (U3). A failed snapshot is never drained. |
+
+Order inside a snapshot (D2): begin, all `bpf_proc`, all `bpf_bigrams`, all
+`bpf_reclaimed`, end. The parts of one key are consecutive, numbered
+`0 … parts−1` with the same `parts`. A failed snapshot carries no
+`bpf_bigrams`, `bigram_records` = 0, `bigram_health` null, `drained` false, and
+the unchanged `totals.bigrams`.
+
+### 8.3 Producer rule (`bigram_parts`)
+
+`bigram_parts(seq, key, table)` turns `{(a, b): n}` into parts: pairs sorted
+by (vocabulary index of `a`, markers after the syscalls; index of `b`), zero
+entries dropped, split by `chunk_records(..., max_items=1024)` so that each
+record holds ≤ 1,024 pairs **and** ≤ 65,536 bytes. Part numbers are sized with
+a placeholder at least as wide as the real ones, so filling them in never
+grows a record past the limit. A pair outside the vocabulary or with a marker
+second raises. With the current vocabulary a table has at most
+(9 + 4) × 9 = 117 pairs, so real tables are one part; a full part of 1,024
+maximal-width pairs with a maximal key is still within the byte rule (tested).
+Whenever the producer emits a `bpf_proc` it emits that process's full table.
+
+**Requirement for the S2.6 emitter (S2.3 audit, finding 4).** Design §3.7's
+"a pair change implies a count change" does not hold for live reads: a probe
+increments the count first and the pair (or `pairs_lost`) second, and the maps
+are read one after the other. A snapshot can therefore see a count without
+its pair, and the pair only in a later snapshot whose counts are unchanged.
+The emitter's change detection must compare the pair table and `pairs_lost`
+as well as the counts. Otherwise a late pair of an exiting process is
+missing from its final report. The collector's exit reclaim already compares
+counts, `pairs_lost` and the pair sum (S2.3).
+
+### 8.4 Consumer rules (additions to §4)
+
+1. **Rejection (whole snapshot, state invalid until a keyframe):** a
+   `bpf_proc` after a `bpf_bigrams`, a `bpf_bigrams` after a `bpf_reclaimed`
+   or with another `seq`; a missing, reordered, duplicated or non-contiguous
+   part, or inconsistent `parts`; a duplicate pair across parts; a table whose
+   key has no `bpf_proc` in the snapshot, or an emitted `bpf_proc` without its
+   table (capability `ok`); `bigram_records` ≠ the number of parts; bigram
+   fields without the capability, or missing with it; `pairs_lost` null while
+   `ok`, or non-null / with another error while `unavailable`; tables, totals
+   or health while `unavailable`; a bigram epoch different from the counts
+   epoch.
+2. **Apply:** a keyframe replaces all tables; otherwise each emitted table
+   replaces the old one (never merged) and reclaimed keys drop theirs
+   (`Reconstructor.pairs`, key → `{(a, b): n}`).
+3. **Cross-check:** after applying, `totals.bigrams` must equal the consumer's
+   own sums (`totals_mismatch` otherwise), also on failed snapshots.
+4. **Capability per epoch:** the bigram selection and status (`status`,
+   `err`) are fixed for an epoch; any change invalidates.
+5. **Drain:** `SnapshotView.drained` reports the drained snapshot. Any later
+   snapshot of the same epoch is counted in `snapshots_after_drain`,
+   invalidates, and is not applied; a new epoch starts normally.
+6. **Loss:** `SnapshotView.pair_loss_possible` is true when `bigram_dropped`
+   rose since the previous successful snapshot, `null` when it cannot be
+   judged (no bigram health, or no previous value). `loss_possible` keeps its
+   S0 meaning (counts loss fields only).
+
+7. **Retained values (S2.2):** `Reconstructor.retired` keeps, per key removed
+   by `bpf_reclaimed` while the state was valid, its reason and last applied
+   payload and table; `epoch_intact` is true while the epoch was observed from
+   seq 0 with every successful snapshot applied and no invalidation;
+   `last_ok_end` is the end record of the last applied successful snapshot.
+
+Not in S2.1/S2.2: validation of bigram streams by `validate_run.py` (S2 step 6).
+
+### 8.5 Resolved contract points (S2.2)
+
+**A. I-B2 purge accounting.** Every term counts observed syscall entries of
+keys that had a counts entry (R-LOSS row 1 events are in neither side):
+
+- ΣC′ = Σ over the counted keys of Σₛ C′[K][s]; ΣB = Σ of their pair counts;
+  Σ`pairs_lost_K` = Σ of their `pairs_lost`. The counted keys are the live keys
+  of the drained state and the keys reclaimed with reason `exited` ("reclaimed
+  keys" in D13 is the two-phase reclaim of D5), with their last emitted values.
+- `purged_C` = `purged_counts`: Σₛ C′[K][s] of purged entries at purge time.
+- `purged_B` = `purged_pairs` + `purged_pairs_lost`: the pair counts **and**
+  the `pairs_lost` of those entries.
+- Keys removed as `self_excluded` are counted **only** through these totals,
+  never also with their last emitted values (that would count them twice).
+
+Why `purged_B` must include `purged_pairs_lost`: by R-LOSS every counted
+entry of K adds 1 either to B[K] or to `pairs_lost_K`, so at quiescence
+ΣC′[K] = ΣB[K] + `pairs_lost_K` (I-B1′). Removing a purged K removes
+ΣC′[K] from the left and ΣB[K] + `pairs_lost_K` from the right; with
+`purged_B` = `purged_pairs` alone, I-B2 would fail by Σ `pairs_lost` of the
+purged keys (a test shows a difference of exactly 2). This is the approved
+equation with its terms defined, not a new invariant.
+
+Producer requirement **P-PURGE** (for the later emitter/collector step): a
+purge reads an entry's counts, pairs and `pairs_lost` after its exclusion has
+taken effect, so no event of that key is in flight between the read and the
+delete; otherwise the purged values need not balance.
+
+Consequence (tested): I-B2 is the sum of the per-key identities plus the purge
+terms, so a key whose own values balance contributes 0 net, and its absence
+or duplication is invisible to I-B2. Key coverage comes from the
+Reconstructor (`tracked`/`totals` cross-checks, `retired`), and in scripted
+tests from `check_ib2_ground_truth` (§8.6), which compares both sides with
+the number of observed entries counted by the script and so detects a
+missing or double-counted process (tested).
+
+**B. Zero-count entries.** Producer invariant **P-ZERO**: an emitted table is
+sparse; a map entry read with n = 0 (between its insertion and its first
+increment) is left out, and is not loss. The schema requires n ≥ 1. The
+decoder (`bigrams.decode_entries`) drops such entries and reports them
+separately as `zero_entries`; checkers treat an absent pair as 0, so an
+omitted zero entry changes no sum and is never read as loss. Loss is only
+`pairs_lost` and `bigram_health`.
+
+**C. Names and representation.** Unchanged from §8.2: an empty table is one
+part with `pairs: []`; `bigram_health`, `purged_counts`, `purged_pairs`,
+`purged_pairs_lost`, `pairs_lost`, `bigrams_err`. No contradiction found.
+
+**D. Capability status.** Fixed per epoch (§8.4 rule 4): a change of
+selection, `status` or `err` invalidates. No `ok → EIO` transition is defined;
+the unified program has no separate bigram failure mode while counts continue.
+A failed map read remains a failed snapshot. Consequently `err` and
+`bigrams_err` accept only `UNSUPPORTED`; `EIO` is reserved (schema
+`$defs/bigram_err`).
+
+### 8.6 Checkers (`processpulse/bigrams.py`, S2.2)
+
+Stdlib only (never imports BCC). Codes: 0–8 = the vocabulary syscalls in
+order (`v1-3aba869d1752`), 9–12 = `START_NEW`, `START_ATTACH`, `START_LOST`,
+`EXEC`; unknown, non-integer or boolean codes raise `DecodeError`, and so does
+a marker as the second element (I-B5). Each checker returns `PASS`, `FAIL` or
+`NOT_APPLICABLE` (precondition unmet, with the reason). A malformed table
+(I-B5 or a bad count) is a `FAIL`.
+
+The quiescence basis is given by the caller: `drained`, `reclaimed_exited`
+(last values of a key reclaimed as exited, whose last record is marked
+exited) or `asserted` (a scripted helper idle outside the vocabulary). `None`
+(a live process, including an exited one not yet reclaimed) gives
+`NOT_APPLICABLE`: live reads are not atomic.
+
+| Checker | Equation | Preconditions |
+|---|---|---|
+| `check_ib5` | names in V ∪ M; markers only first | none |
+| `check_ib1` | ∀s∈V: Σₓ B(x,s) = C′[s] | quiescent, `pairs_lost` = 0 |
+| `check_ib1_prime` | ΣB + `pairs_lost` = Σₛ C′[s] | quiescent |
+| `check_ib3_prime` | ∀x∈V: Σₛ B(x,s) ≤ C′[x] | quiescent |
+| `check_ib3_exact` | ∀x∈V: C′[x] − Σₛ B(x,s) = segments ending in x | quiescent, `pairs_lost` = 0, oracle, **no global loss in the window** |
+| `check_ib4_exact` | ∀m∈M: Σₛ B(m,s) = segments starting with m (`START_LOST`: 0) | quiescent, `pairs_lost` = 0, oracle, **no global loss in the window** |
+| `check_ib2_drained` | §8.5 A | drained snapshot applied, state valid, `epoch_intact`, capability ok, no vanished entry |
+| `check_ib2_ground_truth` | ΣC′ + `purged_counts` + `counts_map_full` = N = ΣB + Σ`pairs_lost` + `purged_pairs` + `purged_pairs_lost` + `counts_map_full`, with N the observed entries counted by the script itself (v2 §4 form of I-B2) | as `check_ib2_drained`, plus a known N (only scripted helpers tracked) |
+| `check_ib2_ground_truth_scope` (S2.4) | the same equation over a closed scope of scripted processes: their entries (live or exited) plus the purge totals they caused = N | scope quiescent; `counts_map_full` did not rise (row 1 cannot be attributed to a scope); usable before the drained snapshot exists |
+
+**Global-loss precondition of the exact checks (S2.4; S2.3 audit, finding 1).**
+"Zero losses" (plan v3 D13) cannot be read from the process's own
+`pairs_lost`:
+- R-LOSS row 1 loses an entry and its pair without touching `pairs_lost`;
+- every thread that started before the last slot-map-full event gets
+  `START_LOST`, even if it lost nothing.
+
+`check_ib3_exact` and `check_ib4_exact` therefore take `losses`: the
+increases of `counts_map_full`, `thread_map_full`, `bigram_map_full` and
+`pre_arm_events` over the window the claim covers. They return
+NOT_APPLICABLE when `losses` is missing or any of these rose. The helpers:
+- `loss_window(before, after)` gives the increases between two readings, for
+  example `BpfCollector.global_losses()` read before a scripted process starts
+  and after it finishes;
+- `epoch_losses(rc)` reads the values of the current epoch from the last end
+  record (cumulative since the epoch's load).
+
+A window that starts after arming is the tighter choice: the agent's own
+pre-arm events then do not apply. The equations and the preconditions of
+the other checks are unchanged. Regression: the measured row-1 case (S2.3
+evidence), which has `pairs_lost` 0 and a `START_LOST` pair, gave a false
+FAIL before this change and gives NOT_APPLICABLE after it.
+| `check_quiescent_reports` | I-B5, I-B1′, I-B3′, I-B1 | every key reclaimed as exited; every live key after the drain |
+
+I-B3 is checked in its original v2 §4 form (count minus row sum = number of
+segments ending in x); v3's short wording "row sums = number of segments
+ending in x" states the same comparison less precisely.
+
+**Oracle (`expected_pairs`).** A scripted, loss-free lifecycle of one process:
+`("thread", t, "attach"|"new")`, `("call", t, s)`, `("exec", t)`,
+`("exit", t)`. A thread's first observed call pairs with its start marker;
+an exec ends every other thread and continues the calling thread with
+`EXEC` (also for a non-leader exec); exit ends the thread; a reused id is a
+new thread; nothing is `attach` after an exec. It returns the expected
+pairs, counts, segment starts and segment ends. It does not model losses or
+calls the script does not list (for example a helper's own startup calls),
+so it is ground truth only for a zero-loss run whose script lists every
+observed call.

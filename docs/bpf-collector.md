@@ -1,6 +1,6 @@
 # Unified BPF collector (M1b S1)
 
-Status: implemented in the working tree (M1b stage S1), not committed.
+Status: S1 committed (`391c988`); the `bigrams` capability (S2.3) is in the working tree, uncommitted.
 Code: `processpulse/bpf_collector.py`, `processpulse/vocab.py`, `bpf/common.h`,
 `bpf/syscall_counter.bpf.c`, `bpf/core.bpf.c`. `processpulse/syscalls.py` keeps
 the M1 interface (`SyscallCollector`, `calibrate`, `SYSCALLS`, `FAMILIES`) on top.
@@ -31,7 +31,15 @@ were compiled in.
 | Name | Status | Source | Tracepoints |
 |---|---|---|---|
 | `counts` | implemented (the M1 syscall-entry counters) | `syscall_counter.bpf.c` | `syscalls:sys_enter_<v>` for every vocabulary entry |
-| `bigrams`, `priv`, `net` | reserved; refused with "not implemented in this stage" | — | — |
+| `bigrams` | implemented (M1b S2.3); requires `counts` | `bigrams.bpf.c` | none of its own |
+| `priv`, `net` | reserved; refused with "not implemented in this stage" | — | — |
+
+Valid selections are `("counts",)` and `("counts", "bigrams")` (any order,
+normalised). `bigrams` without `counts`, duplicates, empty, unknown or
+reserved names are refused before compiling. Sources are assembled as
+`common.h`, `bigrams.bpf.c` (if selected), `syscall_counter.bpf.c`,
+`core.bpf.c`, probes: the counter calls the bigram hooks, so their source
+comes first.
 
 Every program also attaches `sched:sched_process_exit` and `sched:sched_process_exec`.
 `start()` refuses to run unless the attached set equals
@@ -85,3 +93,133 @@ Fields that are **not** refreshed without an exec:
 Container start is unaffected: `runc init` joins the container's cgroup and
 then execs the container program, so the exec refresh records the container
 scope (DIT-1 check 4).
+
+## Bigrams capability (M1b S2.3)
+
+Contract: `docs/telemetry-v2.md` §8 and the S2 design (R-LOSS, markers,
+I-B1–I-B5, approved as A8; decisions U2, U4, U5, U7, U9). Kernel side:
+`bpf/bigrams.bpf.c` plus `#ifdef PPC_CAP_BIGRAMS` hooks in
+`syscall_counter.bpf.c` and `core.bpf.c`. Userspace: `BpfCollector`
+(`capabilities=("counts", "bigrams")`). Records are not emitted yet; the
+emitter and the agent option are a later S2 step.
+
+### Maps and layouts
+
+| Map | Key | Value | Capacity |
+|---|---|---|---|
+| `bigrams` | `struct bkey {pkey proc; u16 a; u16 b; u32 pad}` (24 bytes, no implicit padding, zero-initialised) | `u64` count | `max_pairs`, default 131,072 |
+| `bglobal` (array) | 0 | `{u64 armed_boot_ns; u64 last_thread_full_ns; u32 armed; u32 pad}` | 1 |
+| `counts` (bigram builds only) | `pkey` | `c[NSYSCALLS]` + `u64 pairs_lost` (U7) | `max_procs` |
+| `threads` | host TID | `tslot`; `u16 prev` uses half of the S1 padding, so the slot stays 32 bytes in every build | `max_threads` |
+
+Counts-only builds compile none of this: the `counts` value keeps the M1
+layout and there is no `bigrams`/`bglobal` map (tested on the assembled
+source and on a running program). The health array has 12 entries in every
+build; indices 9–11 (`bigram_map_full`, `bigram_dropped`, `pre_arm_events`)
+stay 0 without the capability.
+
+Measured on this kernel (one start, `/proc/self/fdinfo` `memlock`; H-MEMLOCK:
+the field exists): `bigrams` 12,585,664 bytes (12.00 MiB) at 131,072
+entries; all seven maps of a bigram build 20,730,392 bytes = **19.77 MiB
+(20.73 MB)**. Evidence: `results/acceptance/m1b/s2.3/`. The design estimate of
+about 10 MiB for the bigram map counted only the entries (80 bytes × 131,072).
+Every hash map's measured value fits (entries + 16) × (48 + key + value) +
+buckets × 16 + 1,472 bytes on this 16-CPU host, a model fitted to the five
+measured maps (not taken from kernel source): the bucket array (2 MiB for
+131,072 buckets) and one spare element per possible CPU account for the
+difference.
+
+### Codes
+
+`a` and `b` are codes: 0–8 the vocabulary syscalls in `vocab.py` order
+(`v1-3aba869d1752`), then the markers `M_START_NEW` 9, `M_START_ATTACH` 10,
+`M_START_LOST` 11, `M_EXEC` 12 (`NSYSCALLS + 0..3`; a unit test checks them
+against `processpulse.bigrams.MARKER_CODES`). `b` is always the observed call;
+a marker is only ever stored in `prev`, so it can only be a first element
+(I-B5). The decoder rejects a marker as second element.
+
+### Per-thread state and markers
+
+A slot's `prev` is set when the slot is created (first attributed,
+non-excluded event of the thread, or its exec), from the thread's
+`start_boottime`:
+- `START_LOST` if it started before the last thread-map-full event
+  (`last_thread_full_ns`);
+- else `START_NEW` if armed and it started at or after `armed_boot_ns`;
+- else `START_ATTACH` (existed before arming, or created before arming).
+
+A stale slot (same host TID, different start time) is a new thread and is
+classified the same way (`thread_slot_stale` counted). `sched_process_exec`
+(after S1 dropped the old TID's slot) finds or creates the exec'ing thread's
+slot and, when armed, sets `prev = EXEC`; before arming the slot keeps its
+marker. Thread exit deletes the slot (S1).
+
+### R-LOSS and health
+
+| Path | Count | Pair | `pairs_lost` | Health | Next `prev` |
+|---|---|---|---|---|---|
+| row 1: no counts entry | lost | lost | — | `counts_map_full`, `bigram_dropped` | `START_LOST` |
+| row 2: no slot | recorded | lost | +1 | `thread_map_full` (in `thread_touch`), `bigram_dropped`; `last_thread_full_ns` set | next slot `START_LOST` |
+| row 3: bigram map full | recorded | lost | +1 | `bigram_map_full`, `bigram_dropped` | s |
+| before arming (U2a) | recorded | lost | +1 | `pre_arm_events`, `bigram_dropped` | unchanged |
+| ok | recorded | recorded | — | — | s |
+
+`thread_map_full` counts slot-creation failures, which include an exec that
+finds no room. An exec is not a syscall entry, so it loses no pair: for
+example, a helper that ran entirely with a full slot map gave
+`thread_map_full` +4 and `bigram_dropped` +3.
+
+### Arming
+
+`start()` arms right after the tracepoints are verified (`arm=False`
+defers it, so `arm()` can be called later). `arm()` reads `CLOCK_BOOTTIME`
+(the clock of `start_boottime` and `bpf_ktime_get_boot_ns()`), writes
+`armed_boot_ns`, then sets `armed`. Disarming and the final drain are not
+implemented (drain is a later S2 step).
+
+### Reading, reclaim and purge
+
+- `read_bigrams()` reads the map (`items_lookup_batch()`, else per-key
+  `items()`; H-BATCH: batch works on this kernel), groups raw entries by
+  process `(start_ns, tgid)` and then decodes them. Every process with a counts
+  entry has a table (empty if it has no pair). Entries with n = 0 (read between
+  insertion and increment) are dropped and counted in `zero_entries` (P-ZERO);
+  entries whose process has no counts entry are counted in `orphan_entries`.
+  The reads are sequential, not atomic.
+- Exit reclaim (two-phase): an exited process is reclaimed only when its
+  counts, `pairs_lost` and pair sum are unchanged since its exit report; its
+  pair entries are deleted with it. `snapshot()` keeps the decoded tables
+  of that read in `last_bigrams`.
+- `exclude()` sets the exclusion first, then deletes the process's counts,
+  info, slots and pair entries, adding them to `purged_counts`,
+  `purged_pairs` and `purged_pairs_lost` (P-PURGE).
+- `bigram_health()` returns the eight `bigram_health` end-record fields.
+
+### Known limitations
+
+- `last_thread_full_ns` and `bglobal` are written without compare-and-swap.
+  Two CPUs racing can leave an older full-time, so a thread can be classified
+  `START_NEW` although an earlier pair of it was lost. Its `pairs_lost` still
+  shows the loss, so I-B1′ is unaffected, and exact I-B4 applies only when
+  `pairs_lost` = 0.
+- `START_LOST` is assigned to every thread that started before the last
+  slot-map-full event, including threads that lost nothing.
+- **OPEN — required fix before S2.5 (S2.3 audit, finding 2).** `exclude()`
+  sets the exclusion and immediately reads and deletes the process's counts,
+  pair entries and slots. A probe of that process that passed the exclusion
+  check just before can still be running and holding a pointer into one of
+  those entries. Consequences:
+  - purge totals off by one, so I-B2 fails loudly;
+  - an entry recreated after the delete, which stays live;
+  - inferred, not observed: elements of preallocated hash maps are reused
+    immediately after deletion, so a late increment could land on another
+    process's counter or another thread's `prev`. A wrong `prev` can be silent.
+
+  It happens when an *active* process is excluded: the agent excludes the C
+  collector right after spawning it (`agent.py:121`). The counts part already
+  existed in S1. S2.4's tests exclude only idle helpers, so they are not
+  affected. Planned fix: after setting the exclusion, wait for in-flight
+  probes before reading and deleting, or use non-preallocated maps for these
+  entries.
+- Map reads are not atomic; exact checks require an idle process. The drained
+  final snapshot (U3, H-DRAIN) is not implemented yet.

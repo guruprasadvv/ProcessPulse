@@ -36,5 +36,8 @@ TRACEPOINT_PROBE(sched, sched_process_exec)
 #ifdef PPC_CAP_COUNTS
     counts_on_exec(&k);
 #endif
+#ifdef PPC_CAP_BIGRAMS
+    bigram_on_exec(&k);
+#endif
     return 0;
 }

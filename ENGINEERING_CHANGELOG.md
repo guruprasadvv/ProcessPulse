@@ -10,7 +10,7 @@ working tree but not yet in a commit.
 |---|---|---|
 | M0 | Accepted with documented defects | 2026-10-19 audit (below) |
 | M1 | **Accepted 2026-10-19** | M1 foundations + M1 acceptance (below); `results/acceptance/m1/` |
-| M1b | S0 accepted (`d9b9e9b`); S1 implemented (uncommitted, under review); S2–S7 not started | M1b S0, S1 (below); `results/acceptance/m1b/` |
+| M1b | S0 accepted (`d9b9e9b`); S1 committed (`391c988`); S2.1–S2.4 implemented (uncommitted, under review); S2.5+ and S3–S7 not started (purge-race fix required first) | M1b S0, S1, S2.1–S2.3 (below); `results/acceptance/m1b/` |
 | M2–M7 | Not started | — |
 
 ---
@@ -327,3 +327,210 @@ source or Makefile changed; no S1–S7 functionality.
   slot TIDs (host-namespace map keys) with distro PIDs; fixed by recording the
   distro TID in the slot (informational) and comparing that → 8 passed.
 - Not run: `--abba`, overhead matrix, 10-minute run, DIT-1 ×3, 10× exact counts.
+
+## 2026-10-19 — M1b S1 committed
+
+- `391c988` refactor(m1b): implement S1 unified bpf compilation and per-thread
+  lifecycle tracking (recorded here afterwards; verified with `git log`).
+
+## 2026-10-19 — M1b S2.1: bigram records in schema v2 and the Reconstructor (uncommitted)
+
+Contract: S2 design report (recovered from the M1b planning session) with the
+approved decisions A8 and U1–U10. Step 1 of the S2 sequence only: no BPF,
+emitter, agent or kernel change.
+
+### Schema change (additive, `v` stays 2)
+- Approved as U1 ("extend telemetry v2 additively; preserve existing S0
+  compatibility"), as an exception to the CLAUDE.md §5 rule that a schema
+  change bumps `v`.
+- `telemetry.v2.json`: new type `bpf_bigrams` (`key`, `part`, `parts`,
+  `pairs: [{a, b, n}]`, `maxItems` 1,024; `a` ∈ vocabulary ∪ 4 markers, `b` ∈
+  vocabulary: I-B5 as a schema rule; `n` ≥ 1); optional
+  `capabilities.bigrams`; optional `bpf_proc.pairs_lost` / `bigrams_err`;
+  optional end fields `bigram_records`, `totals.bigrams`, `bigram_health`
+  (U4/U10 counters), `drained`. All new fields present iff the capability is
+  selected. v1 schema untouched (sha256 test unchanged).
+- `processpulse/validate.py`: `maxItems` keyword; `bpf_bigrams` dispatch;
+  cross-field rules (part < parts, empty only as a single part, no duplicate
+  pair, value-xor-error for `pairs_lost`, capability ok/unavailable shape,
+  bigram epoch = counts epoch, all-or-none end fields, failed snapshot carries
+  no bigram data).
+- `processpulse/snapshots.py`: `chunk_records(max_items=)`, `bigram_parts()`,
+  `bigram_totals()`, Reconstructor support (section order, part sequence and
+  contiguity, table ↔ `bpf_proc` pairing, replace-not-merge, totals
+  cross-check, capability fixed per epoch, `snapshots_after_drain`,
+  `SnapshotView.drained` / `pair_loss_possible`, `Reconstructor.pairs`).
+- Tests: `tests/test_bigram_records.py` (new), `tests/snapshot_fakes.py`
+  (`BigramFake`, `BigramStandIn`, a test-only producer around `V2Emitter`),
+  one comment and one extra invalid fixture in `tests/test_schemas_v2.py`.
+- Docs: `docs/telemetry-v2.md` §8.
+
+### Validation
+- Baseline before any edit (HEAD `391c988`): `make test` → 245 passed,
+  1 skipped; py3.12 venv → 245 passed, 1 skipped; recorded S0 10-minute v2 run
+  (`results/raw/m1b-s0-10min-20261019T042927`) → `validate_run.py` rc 0,
+  23,271/23,271 lines valid, 616 complete snapshots, 11 keyframes, 0 protocol
+  errors.
+- New tests failed before the implementation (ImportError), then passed.
+- After: `make test` → 74 C checks, 0 failures; 360 passed, 1 skipped (D8);
+  py3.12 venv `make test-py` → 360 passed, 1 skipped; `jsonschema`
+  cross-checks ran on both (4.19.2 / 4.25.1); `make check` rc 0, 0 warnings.
+- Recorded S0 run re-validated with the new code: verdict, line counts and
+  every protocol counter identical to the baseline; the only report difference
+  is the new `snapshots_after_drain` = 0; `bpf.jsonl` sha256 unchanged.
+- Not run (out of scope for S2.1): privileged suite, any BPF or agent run.
+
+## 2026-10-19 — M1b S2.2: bigram decoder and invariant checkers (uncommitted)
+
+Step 2 of the S2 sequence. No BPF, emitter, agent or kernel change.
+
+### Resolved contract points (docs/telemetry-v2.md §8.5)
+- A: I-B2 terms defined: `purged_C` = `purged_counts`, `purged_B` =
+  `purged_pairs` + `purged_pairs_lost`; counted keys = live keys at the drain
+  plus keys reclaimed as `exited` (last emitted values); `self_excluded` keys
+  only through the purge totals. Producer requirement P-PURGE recorded.
+- B: producer invariant P-ZERO (sparse tables, n = 0 entries dropped, not loss).
+- C: S2.1 names and the one-empty-part representation kept unchanged.
+- D: capability status fixed per epoch; no `ok → EIO` transition defined.
+
+### Changes
+- `processpulse/bigrams.py` (new): code/name decoding (0–8 syscalls, 9–12
+  markers), `decode_pair`, `decode_entries` (drops and counts n = 0 entries),
+  `Result` with PASS / FAIL / NOT_APPLICABLE, `check_ib5`, `check_ib1`,
+  `check_ib1_prime`, `check_ib3_prime`, `check_ib3_exact`, `check_ib4_exact`,
+  `check_ib2_drained`, `check_quiescent_reports`, oracle `expected_pairs`.
+- `processpulse/snapshots.py`: Reconstructor keeps `retired` (reason, last
+  payload and table of removed keys), `epoch_intact` and `last_ok_end`.
+- `tests/test_bigrams.py` (new); `docs/telemetry-v2.md` §8.4 rule 7, §8.5, §8.6.
+
+### Finding
+- I-B2 is the sum of the per-key I-B1′ identities plus the purge terms, so it
+  cannot detect a missing or duplicated key whose own values balance (tested
+  and documented). It does detect wrong purge totals, a key whose final
+  values do not balance, and a counted entry with neither pair nor loss.
+
+### Validation
+- `make test` (py3.14.4) → 74 C checks, 0 failures; 472 passed, 1 skipped (D8);
+  py3.12 venv `make test-py` → 472 passed, 1 skipped; `tests/test_bigrams.py`
+  → 112 passed on both; `make check` rc 0, 0 warnings.
+- Recorded S0 10-minute run re-validated: identical to the S2.1 baseline
+  (only `snapshots_after_drain` = 0 added); `bpf.jsonl` sha256 unchanged.
+- Synthetic data only; no privileged, BPF or agent run.
+
+## 2026-10-19 — S2.1/S2.2 audit fixes, then M1b S2.3: BPF bigram capability (uncommitted)
+
+### Audit fixes (S2.1/S2.2 read-only audit, minor findings 1–6)
+1. `Reconstructor.feed`: `AttributeError` from malformed records (e.g. a
+   non-object `capabilities`) is now an incomplete snapshot, as in S1, not an
+   uncaught exception. Test: `test_malformed_capabilities_reject_the_snapshot_without_raising`.
+2. The drop-middle, drop-last and duplicate-part tamper fixtures keep
+   `bigram_records` consistent. A new test pins each rejection to its
+   part-sequence reason.
+3. New tests: a reclaim listed inside a keyframe is retired; `epoch_intact`
+   holds when snapshot 0 fails and seq 1 is the keyframe, and is lost when the
+   first successful snapshot is not a keyframe.
+4. `bigrams.check_ib2_ground_truth` (the v2 §4 form of I-B2: both sides equal
+   the observed entries counted by the script, plus `counts_map_full`). It
+   detects a missing (−2) and a double-counted (+3) process that plain I-B2
+   cannot see.
+5. `CLAUDE.md` §5: the additive-extension exception (U1) is recorded next to
+   the versioning rule.
+6. `EIO` is reserved: `$defs/bigram_err` = {`UNSUPPORTED`, null} for
+   `capabilities.bigrams.err` and `bpf_proc.bigrams_err` (schema-v2 change,
+   still additive and unreleased). Docs updated.
+
+### S2.3 changes
+- `bpf/bigrams.bpf.c` (new): `bigrams` map (`max_pairs`, default 131,072), `bglobal`
+  (arming, last slot-map-full time), markers 9–12, slot classification,
+  R-LOSS rows 1–3 and pre-arm accounting, EXEC at `sched_process_exec`.
+- `bpf/common.h`: health 9–11 (`bigram_map_full`, `bigram_dropped`,
+  `pre_arm_events`), `tslot.prev` (from the padding; size unchanged),
+  `thread_touch()` returns the slot and whether it was created.
+- `bpf/syscall_counter.bpf.c`: `pairs_lost` in the counts value and the
+  bigram hooks, both only under `PPC_CAP_BIGRAMS`. `bpf/core.bpf.c`: exec hook.
+- `processpulse/bpf_collector.py`: capability `bigrams` (requires `counts`;
+  `priv`/`net` still reserved), source order, `arm()`, `read_bigrams()`
+  (grouped by process, then decoded; zero and orphan entries counted),
+  `bigram_health()`, the reclaim fingerprint (counts, `pairs_lost`, pair
+  sum) with deletion of pair entries, pair purge in `exclude()`,
+  `map_memory()` in `build_info()`.
+- Tests: `tests/test_bpf_collector_unit.py` (rewritten for two capabilities),
+  `tests/test_bigrams_bpf.py` (new, 16 privileged). Docs:
+  `docs/bpf-collector.md` (S2.3 section).
+
+### Validation (commands in the S2.3 review report)
+- Unprivileged suite: 502 passed, 1 skipped (D8) on py3.14 (`make test`, 74 C
+  checks, 0 failures) and on py3.12; `make check` rc 0, 0 warnings.
+- As root, `pytest tests/ -m privileged` → 58 passed (S1's 42 + 16 new) in 247 s;
+  `bpf_stats_enabled` 0 before and after; 0 `ppc-*` cgroups; 0 containers.
+- Counts-only equivalence (`tools/acceptance/s1_equivalence.py` as root) vs
+  `results/acceptance/m1b/s1/equivalence-post-s1.json`: 34 of 34 fields identical.
+- Measured once: unified compile 6.70 s, calibrate 9.81 s; `bigrams` map
+  memlock 12,585,664 bytes (131,072 entries); batch lookup works (H-BATCH);
+  fdinfo reports `memlock` (H-MEMLOCK).
+- Not run: `--abba`, overhead, 10-minute run, DIT-1 ×3, repeated exact counts
+  (S2.4 scope).
+
+## 2026-10-19 — M1b S2.4: exact-check preconditions and repeated scripted acceptance (uncommitted)
+
+### Phase 1: global-loss precondition (S2.3 audit, finding 1)
+- `processpulse/bigrams.py`: `check_ib3_exact` and `check_ib4_exact` take
+  `losses`, the increases of `counts_map_full`, `thread_map_full`,
+  `bigram_map_full` and `pre_arm_events` over the window the claim covers.
+  They return NOT_APPLICABLE when it is missing or any counter rose. New
+  helpers: `loss_window()`, `epoch_losses()` (epoch-relative values from the
+  last end record) and `GLOBAL_LOSS_FIELDS`. `BpfCollector.global_losses()`
+  reads the four counters. The equations and the other checks' preconditions
+  are unchanged.
+- Regression: the audited row-1 case (`pairs_lost` 0, a `START_LOST` pair)
+  gave a false FAIL and now gives NOT_APPLICABLE, both synthetic and on a
+  real helper (`test_row_1_counts_map_full`).
+- New `check_ib2_ground_truth_scope`: the ground-truth equation of I-B2 over
+  a closed scope of quiescent scripted processes, with their purge totals.
+  It is usable before the drain exists. Row-1 losses cannot be attributed to
+  a scope, so it is NOT_APPLICABLE when `counts_map_full` rose.
+
+### Phase 2: test gaps (S2.3 audit, finding 6)
+- `tests/test_bigrams_bpf.py`: the v1 record stays schema-valid in a bigrams
+  build; an exec with a full thread map raises `thread_map_full` and loses
+  exactly one pair (the execve entry's); a thread-map-full event before arming
+  is counted once (`pairs_lost` = entries, Δ`bigram_dropped` =
+  Δ`pre_arm_events`); the global-loss precondition holds on the real row-1
+  case.
+
+### Phase 3: documentation and evidence
+- Correction: the S2.3 report gave the total BPF map memory as "≈ 20.7 MiB".
+  The measured total is 20,730,392 bytes = **19.77 MiB (20.73 MB)**
+  (`docs/bpf-collector.md`; the bucket array and per-CPU spare elements
+  explain the gap to the 10 MiB design estimate).
+- `docs/telemetry-v2.md` §8.3: requirement for the S2.6 emitter. Its change
+  detection must include the pair table and `pairs_lost`, because design
+  §3.7's "a pair change implies a count change" is false for live reads.
+- `results/acceptance/m1b/s2.3/`: the S2.3 evidence that existed as files
+  (build info, map memory, per-path loss results, counts-only equivalence,
+  S0-run re-validations) with a README. Test totals and cleanup state were
+  only seen as command output; they are transcribed and marked as such.
+- The purge race (S2.3 audit, finding 2) stays **OPEN, required before S2.5**
+  (`docs/bpf-collector.md`, known limitations).
+
+### Phase 4: repeated scripted acceptance
+- `tests/test_bigrams_acceptance.py` (14 privileged configurations): the
+  complete pair table and counts of a real helper equal the script's oracle,
+  for openat/open/execve/clone × N ∈ {1, 1000} and openat/execve/clone ×
+  N = 100,000, a mixed sequence, an exec, and a three-helper ground-truth scope
+  with an exit and a purge. Each configuration also checks I-B5, I-B1, I-B1′,
+  I-B3′, exact I-B3/I-B4, the scoped I-B2 ground truth, zero global losses and
+  no stale slot.
+- `tools/acceptance/bigram_exact.sh` + `summarize_bigram_exact.py`: 10
+  repetitions in fresh processes, each followed by the S1 equivalence probe.
+- **Result: 10 of 10 for all 14 configurations; equivalence 34 of 34 fields in
+  10 of 10** (`results/acceptance/m1b/s2.4/exact/summary.md`).
+
+### Validation
+- Stored logs in `results/acceptance/m1b/s2.4/regression/`:
+  - `make test` (py3.14) → 74 C checks, 0 failures; 521 passed, 1 skipped (D8);
+  - py3.12 `make test-py` → 521 passed, 1 skipped;
+  - `make check` rc 0;
+  - root `pytest tests/ -m privileged` → 75 passed; `bpf_stats_enabled` 0;
+    no cgroups or containers left.
+- Not run: `--abba`, overhead, drain, emitter, whole-epoch I-B2 (S2.5/S2.6).

@@ -1,0 +1,17 @@
+start_wall: 2026-10-19T09:03:12+00:00 reps=10
+bpf_stats_enabled: 0
+mem_available_kb: 6314900
+run 01 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 60.42s (0:01:00)
+run 02 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 68.11s (0:01:08)
+run 03 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 157.04s (0:02:37)
+run 04 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 52.91s
+run 05 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 54.89s
+run 06 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 155.97s (0:02:35)
+run 07 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 59.04s
+run 08 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 114.93s (0:01:54)
+run 09 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 85.06s (0:01:25)
+run 10 pytest_rc=0 equivalence_rc=0 14 passed, 14 warnings in 48.24s
+end_wall: 2026-10-19T09:24:49+00:00
+bpf_stats_enabled: 0
+ppc_cgroups: 0
+containers: 0
