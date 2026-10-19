@@ -4,6 +4,10 @@
 
 Sources: `git log` (verified), [`ENGINEERING_CHANGELOG.md`](../../ENGINEERING_CHANGELOG.md)
 and the READMEs under `results/acceptance/`.
+- **Hashes:** the history was rewritten once on 2026-10-19 (only commit
+  messages changed). The *Commit* column shows the current hashes; older
+  documents and evidence cite the *Old hash* (full table:
+  [`docs/commit-hash-map.md`](../commit-hash-map.md)).
 - **Dates:** all commits carry the date 2026-10-19; there is no earlier git
   history. The changelog's dates are local time (IST).
 - **Test numbers** below are **historical**: what the saved evidence recorded
@@ -11,18 +15,20 @@ and the READMEs under `results/acceptance/`.
 
 ## Timeline at a glance
 
-| Stage | Commit | Subject (from `git log`) |
-|---|---|---|
-| M0 | `795c945` | chore: initial baseline commit of M0 snapshot collector and PPT requirements |
-| (docs) | `67af42d` | docs: establish master CLAUDE.md architecture and ML contracts |
-| M1 | `3df5819` | feat: complete M1 telemetry foundations and acceptance tests |
-| M1b S0 | `d9b9e9b` | feat(m1b): implement S0 telemetry v2 framing, validation, and snapshot protocol |
-| M1b S1 | `391c988` | refactor(m1b): implement S1 unified bpf compilation and per-thread lifecycle tracking |
-| M1b S2.1–S2.4 | `5f0d376` | feat(m1b): implement S2.1-S2.4 bounded syscall bigram storage and map accounting |
-| purge fix | `1f763de` | fix(m1b): synchronize in-flight BPF readers before purge |
-| M1b S2.5 | `d1d7eac` | feat(m1b): implement S2.5 final-drain protocol and double-read map accounting |
-| M1b S2.6 | `699c2c8` | feat(m1b): implement S2.6 agent integration and schema v2 bigram emitter |
-| M1b S3.1/S3.2 | *none* | uncommitted in the working tree |
+| Stage | Commit | Old hash | Subject (from `git log`) |
+|---|---|---|---|
+| M0 | `a1be2b9` | `795c945` | chore: initial baseline commit of M0 snapshot collector and PPT requirements |
+| (docs) | `b67abc2` | `67af42d` | docs: establish master CLAUDE.md architecture and ML contracts |
+| M1 | `1256d0d` | `3df5819` | feat: complete M1 telemetry foundations and acceptance tests |
+| M1b S0 | `610702a` | `d9b9e9b` | feat(m1b): implement S0 telemetry v2 framing, validation, and snapshot protocol |
+| M1b S1 | `4346fab` | `391c988` | refactor(m1b): implement S1 unified bpf compilation and per-thread lifecycle tracking |
+| M1b S2.1–S2.4 | `d1ff507` | `5f0d376` | feat(m1b): implement S2.1-S2.4 bounded syscall bigram storage and map accounting |
+| purge fix | `615896d` | `1f763de` | fix(m1b): synchronize in-flight BPF readers before purge |
+| M1b S2.5 | `ecbe7d2` | `d1d7eac` | feat(m1b): implement S2.5 final-drain protocol and double-read map accounting |
+| M1b S2.6 | `5a45db3` | `699c2c8` | feat(m1b): implement S2.6 agent integration and schema v2 bigram emitter |
+| (docs) | `cc546ab` | `9a628a3` | docs: add team onboarding package, collaboration protocol and S3 network plan |
+| (docs) | `69b9005` | — | docs: add commit hash map for the rewritten history |
+| M1b S3.1/S3.2 (**only on branch `wip/s3.2-network`**) | `5b6231b` | `3a2451e` | wip(m1b): S3.1/S3.2 network capability (connect/accept) - NOT ACCEPTED |
 
 S2.1–S2.4, the purge fix and S2.5 were developed uncommitted and then
 committed afterwards in three separate commits, each verified against a
@@ -30,7 +36,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
 
 ---
 
-## M0: snapshot collector (`795c945`)
+## M0: snapshot collector (`a1be2b9`)
 - **Purpose:** prove the data-collection layer: enumerate `/proc`, read CPU
   ticks, emit one JSON object per process.
 - **Implementation:** a single-file C collector; tests in
@@ -51,7 +57,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
   - `bpf_get_ns_current_pid_tgid()` fails with EINVAL in nested namespaces;
   - `thread_pid->numbers[2].nr` gives the distro PID.
 
-## M1: telemetry foundations (`3df5819`)
+## M1: telemetry foundations (`1256d0d`)
 - **Purpose:** streaming telemetry with exact eBPF syscall counts and proven
   identity.
 - **Main changes:**
@@ -79,7 +85,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
     was discovered later and fixed for v2 by S0.
 - **Enabled:** everything in M1b.
 
-## M1b S0: v2 framing and snapshot protocol (`d9b9e9b`)
+## M1b S0: v2 framing and snapshot protocol (`610702a`)
 - **Purpose:** fix F1 and define a robust consumer contract.
 - **Changes:**
   - the byte rule (`jsonl.py`);
@@ -101,7 +107,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
   (`results/acceptance/m1b/s0/`).
 - **Enabled:** S2.1's additive bigram fields.
 
-## M1b S1: unified BPF program (`391c988`)
+## M1b S1: unified BPF program (`4346fab`)
 - **Purpose:** one capability-flagged program instead of separate ones.
 - **Changes:**
   - `bpf/common.h` (identity, slots, health), `core.bpf.c` (scheduler hooks);
@@ -118,7 +124,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
   baseline `equivalence-post-s1.json` is the regression reference for every
   later stage.
 
-## M1b S2.1–S2.4: syscall bigrams (`5f0d376`)
+## M1b S2.1–S2.4: syscall bigrams (`d1ff507`)
 - **S2.1, schema and consumer:**
   - additive v2 fields (`bpf_bigrams` records, `pairs_lost`, bigram health,
     `drained`);
@@ -140,7 +146,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
 - **Approved decisions:** A8 (R-LOSS and the invariants) and U1–U10. See
   [TELEMETRY_AND_INVARIANTS.md](TELEMETRY_AND_INVARIANTS.md).
 
-## Purge synchronization fix (`1f763de`): why it matters
+## Purge synchronization fix (`615896d`): why it matters
 - **The bug (an S2.3 audit finding):** `exclude()` set the exclusion flag
   and immediately read and deleted the process's map entries. A probe that
   had passed the exclusion check a moment earlier could still be running on
@@ -167,7 +173,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
     supervisor thread, and exclusion is by PID
     ([CURRENT_STATUS_AND_ROADMAP.md](CURRENT_STATUS_AND_ROADMAP.md)).
 
-## M1b S2.5: final drain (`d1d7eac`): why it matters
+## M1b S2.5: final drain (`ecbe7d2`): why it matters
 - **Problem:** map reads are not atomic. While processes run, a count can be
   read before its pair is recorded, so whole-epoch conservation (I-B2) cannot
   be checked on a live read.
@@ -188,7 +194,7 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
 - **Limitation:** no late writer was ever observed, so it is not shown
   whether the barrier was necessary in those runs.
 
-## M1b S2.6: agent integration and bigram emitter (`699c2c8`)
+## M1b S2.6: agent integration and bigram emitter (`5a45db3`)
 - **Changes:**
   - `V2Emitter(bigrams=...)` writes `bpf_bigrams` and re-emits a process
     when counts, `pairs_lost` **or** its pair table change;
@@ -204,7 +210,9 @@ tested file tree (`results/acceptance/m1b/s2.6/phase1/`).
   - the widest possible bigram record is 62,739 bytes;
   - counts-only equivalence 34/34 (`results/acceptance/m1b/s2.6/`).
 
-## M1b S3.1/S3.2: network capability (uncommitted, **not accepted**)
+## M1b S3.1/S3.2: network capability (branch `wip/s3.2-network`, **not accepted**)
+- **Where:** commit `5b6231b`, only on `wip/s3.2-network`; pushed for team
+  verification and review, not merged into `master`.
 - **Plan:** [`docs/m1b-s3-network-plan.md`](../m1b-s3-network-plan.md). In
   the earlier M1b plan v3, network was stage S5; the owner chose it as "S3"
   (decision N1; A17 allows any order).

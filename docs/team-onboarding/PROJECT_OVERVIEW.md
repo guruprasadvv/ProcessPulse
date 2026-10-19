@@ -48,7 +48,7 @@ one.
 
 | Layer | Question it answers | Where | State |
 |---|---|---|---|
-| **Telemetry collection** | What did each process do, exactly, and what was lost? | `src/`, `bpf/`, `processpulse/` | implemented (M1, M1b S0–S2.6); network part S3.1/S3.2 uncommitted |
+| **Telemetry collection** | What did each process do, exactly, and what was lost? | `src/`, `bpf/`, `processpulse/` | implemented (M1, M1b S0–S2.6); network part S3.1/S3.2 on branch `wip/s3.2-network`, not accepted |
 | **Anomaly detection** | Is this window of behavior unusual compared with benign runs? | planned M2 (features), M4 (Isolation Forest) | planned |
 | **Explainability** | Which features pushed this window toward "anomalous"? | planned M5 (SHAP primary, LIME secondary) | planned |
 | **Presentation** | How does an analyst see and act on it? | planned M6 (curses TUI + static HTML report) | planned |
@@ -80,7 +80,7 @@ the telemetry is unvalidated.
 - An agent CLI with a strict startup policy and an explicit
   `--allow-degraded` mode.
 
-### Implemented, not yet accepted (uncommitted S3.1/S3.2)
+### Implemented, not yet accepted (S3.1/S3.2, on branch `wip/s3.2-network`)
 - A network capability: per-process counts of `connect()` / `accept()` /
   `accept4()` results, split by socket class (IPv4/IPv6 × TCP/UDP/other,
   local IPC, other, unknown) and by coarse destination class (loopback,

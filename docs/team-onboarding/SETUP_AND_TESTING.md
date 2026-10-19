@@ -28,17 +28,38 @@ you produce.
 steps were run either by the user or from Windows with
 `wsl -d Ubuntu -u root -- <cmd>`, once that step was authorized.
 
-## 2. Find and enter the repository in WSL
+## 2. Get the code (clone from GitHub)
 
-The repo lives on the Windows drive. The path contains spaces, so quote it.
+The repository is private: https://github.com/guruprasadvv/ProcessPulse.
+Ask the owner to add you under **Settings → Collaborators**, then accept
+the e-mail invitation.
+
+Clone **inside WSL** (an Ubuntu shell), not from Windows Git Bash:
 
 ```sh
-# from a WSL shell (replace <you> and the path with yours)
-cd "/mnt/c/Users/<you>/Desktop/vit/5th sem/os/os project/os project"
+git config --global user.name  "<your name>"       # once per machine
+git config --global user.email "<your GitHub e-mail>"
+cd ~
+git clone https://github.com/guruprasadvv/ProcessPulse.git
+cd ProcessPulse
+git branch -a                  # master, plus remotes/origin/wip/s3.2-network
 ```
 
+- **Password prompt:** GitHub no longer accepts your account password.
+  Create a personal access token (GitHub → Settings → Developer settings →
+  Personal access tokens) and paste it as the password, or set up an SSH key
+  and clone `git@github.com:guruprasadvv/ProcessPulse.git` instead.
+- **Branches:** stay on `master` unless your task is S3.2 verification or
+  review. In that case: `git switch wip/s3.2-network`. Never work directly
+  on either one; create your own branch
+  ([CONTRIBUTING_WITH_AI.md §7.3](CONTRIBUTING_WITH_AI.md#73-github-workflow-branches-and-pull-requests)).
+- **Location:** a clone under your WSL home (`~/ProcessPulse`) is fastest.
+  The owner's copy is on the Windows drive
+  (`/mnt/c/Users/<you>/Desktop/vit/5th sem/os/os project/os project`). If
+  your path contains spaces, quote it.
+
 From Windows PowerShell you can run a single WSL command:
-`wsl -d Ubuntu -- bash -c 'cd "/mnt/c/.../os project" && make test'`.
+`wsl -d Ubuntu -- bash -c 'cd ~/ProcessPulse && make test'`.
 For anything longer than one command, put it in a script file and run
 `wsl -d Ubuntu -- bash /mnt/c/.../script.sh`. Nested quoting through
 PowerShell or Git Bash breaks easily, and Git Bash rewrites `/mnt/...`
@@ -47,21 +68,24 @@ arguments unless you prefix `MSYS_NO_PATHCONV=1`.
 ## 3. Inspect repository state (always first)
 
 ```sh
-git branch --show-current
+git fetch origin            # learn what changed on GitHub (changes no files)
+git status -sb              # your branch, and whether it is ahead/behind GitHub
 git log --oneline -n 10
 git status --short          # what is modified / untracked
 git diff --stat             # size of uncommitted changes
 git diff --cached --stat    # anything staged? (should normally be nothing)
 ```
 
-**Expected untracked files you must leave alone:** the 15 intentional M1
-evidence logs:
-- `results/acceptance/m1/10min/*.stderr.log`;
-- `results/acceptance/m1/exact_counts/run-*.log`;
-- `results/acceptance/m1/overhead/{abba_stderr,progress,stderr}.log`.
+- **A fresh clone is clean:** `git status --short` prints nothing.
+- **The owner's machine** additionally has 15 intentional, *untracked* M1
+  evidence logs. They are not in git, so your clone won't have them:
+  - `results/acceptance/m1/10min/*.stderr.log`;
+  - `results/acceptance/m1/exact_counts/run-*.log`;
+  - `results/acceptance/m1/overhead/{abba_stderr,progress,stderr}.log`.
+- **`results/raw/`** is ignored by git and holds raw recordings on whichever
+  machine made them.
 
-`results/raw/` is ignored by git and holds raw recordings. Never delete,
-stage or "clean" either of them.
+Never delete, stage or "clean" either of them.
 
 ## 4. Build
 
@@ -84,7 +108,7 @@ python3 -m pytest tests/test_snapshots.py -k keyframe -v     # by keyword
 **Historical reference** (from saved evidence; your counts change as tests
 are added):
 - **S2.6:** 613 passed, 1 skipped.
-- **S3.2 working tree:** 657 passed, 1 skipped, on both Python 3.14.4 and
+- **S3.2 (`wip/s3.2-network`):** 657 passed, 1 skipped, on both Python 3.14.4 and
   3.12.15 (`results/acceptance/m1b/s3.2/regression/`).
 - The 1 skip is the known M0 defect D8 (`test_minimum_record_count`).
 - Other skips mean a missing prerequisite. Read the skip reason.
@@ -98,7 +122,7 @@ processes. Some take minutes and use a lot of memory. Use the checklist in
 ```sh
 # as root, reusing the normal user's pytest (root's Python has no pytest installed)
 sudo PYTHONUSERBASE=/home/<you>/.local make test-privileged
-# a single file, e.g. the network tests (uncommitted S3.2 work):
+# a single file, e.g. the network tests (only on branch wip/s3.2-network):
 sudo PYTHONUSERBASE=/home/<you>/.local python3 -m pytest tests/test_net_bpf.py -m privileged -v
 # keep machine-readable results:
 sudo PYTHONUSERBASE=/home/<you>/.local python3 -m pytest tests/test_net_bpf.py -m privileged -v \
@@ -148,7 +172,7 @@ ask the owner.
 | `validate_run.py RUN_DIR [--min-span-s S] [--json OUT] [--require-drained]` | validates every line of a recorded run (schema, byte rule, framing, alignment, snapshot protocol, bigram invariants) | unprivileged; exit 0 iff all checks pass |
 | `s1_equivalence.py OUT.json` | counts-only behavior probe (root) | compare with `results/acceptance/m1b/s1/equivalence-post-s1.json` (below) |
 | `bigram_exact.sh [REPS]` | repeated scripted exact-bigram acceptance (root) | **writes into `results/acceptance/m1b/s2.4/exact/`**: running it overwrites that stage's evidence. Use a copy or ask first |
-| `exact_counts.sh`, `run_10min.sh`, `run_s0_10min.sh` | M1/S0 acceptance harnesses | **they write straight into accepted evidence:** `results/acceptance/m1/exact_counts/` (which holds 10 of the 15 intentional M1 logs), `results/acceptance/m1/10min/` and `results/acceptance/m1b/s0/`. Running them overwrites that evidence. Don't run them without the owner's authorization and a plan for where the output goes |
+| `exact_counts.sh`, `run_10min.sh`, `run_s0_10min.sh` | M1/S0 acceptance harnesses | **they write straight into accepted evidence:** `results/acceptance/m1/exact_counts/` (on the owner's machine it also holds 10 of the 15 intentional M1 logs), `results/acceptance/m1/10min/` and `results/acceptance/m1b/s0/`. Running them overwrites that evidence. Don't run them without the owner's authorization and a plan for where the output goes |
 | `overhead.py` | overhead matrix; writes `results/acceptance/m1/overhead/` (accepted M1 evidence) | **don't run `--abba`** (the order-balanced benchmark) or the matrix without explicit authorization (memory, and it overwrites evidence) |
 
 **Counts-only equivalence check** (as root). Write the output outside the

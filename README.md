@@ -2,6 +2,20 @@
 
 Explainable Behavioral Anomaly Detection for Containerized Applications.
 
+> **New to the project? Start at [docs/team-onboarding/README.md](docs/team-onboarding/README.md).**
+>
+> **Current status (2026-10-19):**
+> - `master` contains everything committed through M1b S2.6: telemetry
+>   foundations, the v2 snapshot protocol, syscall bigrams, the final drain
+>   and agent integration.
+> - The S3.1/S3.2 network capability is on branch `wip/s3.2-network`,
+>   **not merged and not accepted**.
+> - Before contributing, read the
+>   [team collaboration protocol](docs/team-onboarding/CONTRIBUTING_WITH_AI.md).
+> - Commit hashes cited in older documents predate a 2026-10-19 history
+>   rewrite; see [docs/commit-hash-map.md](docs/commit-hash-map.md).
+> - The rest of this README predates M1b and is kept for reference.
+
 **Current milestone: M1 complete (2026-10-19)** — telemetry foundations: streaming /proc
 collector (schema v1) and BCC syscall collector; acceptance evidence in
 [results/acceptance/m1/README.md](results/acceptance/m1/README.md). Next: M1b (network

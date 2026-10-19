@@ -9,6 +9,13 @@ the repository (checked 2026-10-19). Every workstream needs the owner's
 go-ahead before its work starts. Nothing is committed without
 authorization.
 
+**How work flows:**
+- Each workstream runs on its own branch: `<name>/<task>`, created from
+  `master`, or from `wip/s3.2-network` for A, B and C.
+- Results arrive as a **draft pull request**.
+- Only the owner merges
+  ([CONTRIBUTING_WITH_AI.md §7.3](CONTRIBUTING_WITH_AI.md#73-github-workflow-branches-and-pull-requests)).
+
 > **Hot-spot files (one editor at a time, coordinated):** `bpf/*.c`,
 > `bpf/common.h`, `processpulse/bpf_collector.py`,
 > `processpulse/snapshots.py`, `processpulse/validate.py`,
@@ -22,6 +29,8 @@ authorization.
 - **Prerequisites:** WSL2 setup; root access (or the owner runs the root
   steps); [SETUP_AND_TESTING.md](SETUP_AND_TESTING.md) read; the memory
   checklist passes.
+- **Branch:** start from `origin/wip/s3.2-network` (the S3.2 code exists
+  only there).
 - **Scope:** complete the missing verification on the final S3.1/S3.2 code:
   1. full `make test-privileged`;
   2. `tests/test_net_bpf.py` with `--junitxml`;
@@ -45,6 +54,8 @@ authorization.
 
 - **Prerequisites:** C; eBPF basics ([GLOSSARY.md](GLOSSARY.md));
   [TELEMETRY_AND_INVARIANTS.md](TELEMETRY_AND_INVARIANTS.md).
+- **Branch:** read on `wip/s3.2-network`. A written review can go on your
+  own branch from it.
 - **Scope:**
   - review `bpf/net.bpf.c`, the `PPC_CAP_NET` part of `bpf/core.bpf.c`, and
     the net parts of `processpulse/bpf_collector.py` against
@@ -68,7 +79,9 @@ authorization.
 ## C. Schema and validator review
 
 - **Prerequisites:** JSON Schema basics; [`docs/telemetry-v2.md`](../telemetry-v2.md)
-  §1–§9.
+  §1–§9. §9 (network) and `processpulse/net.py` exist only on
+  `wip/s3.2-network`, so work from that branch if the review includes
+  network fields.
 - **Scope:**
   - check `processpulse/schemas/telemetry.v2.json` against
     `processpulse/validate.py`, the `Reconstructor` in
@@ -142,5 +155,7 @@ authorization.
 - [ ] Your assistant was given the safety rules
   ([CONTRIBUTING_WITH_AI.md §1](CONTRIBUTING_WITH_AI.md#1-safety-rules-non-negotiable)).
 - [ ] The evidence is saved under `results/`.
+- [ ] You work on your own branch. Nothing was pushed to `master` or
+  `wip/s3.2-network`, and no commit carries an AI co-author line.
 - [ ] `git status --short` and `git diff --stat` are included in your
-  handover. Nothing is staged.
+  handover (or your draft pull request). Nothing is staged.

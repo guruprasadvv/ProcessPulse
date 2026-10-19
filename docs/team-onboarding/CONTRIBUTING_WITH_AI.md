@@ -53,15 +53,28 @@ one action never carries over to the next.
      force-push).
 3. **Never `git add .` or `git add -A`.** Stage only explicitly authorized
    paths, and only when a commit has been authorized.
-4. **No commit, merge, rebase, stash or push** without the owner's explicit
-   authorization. The default commit authorization is **none**.
+4. **No commit, merge, rebase, stash or push** without explicit
+   authorization in the task's "Commit authorization" field. The default
+   is **none**.
+   - **The usual grant:** commit to your own task branch, push that branch,
+     and open a **draft** pull request (§7.3).
+   - **Never push to `master` or `wip/s3.2-network` directly.** Never
+     force-push a shared branch, never push tags, and never delete remote
+     branches.
+   - **Only the owner merges into `master`,** after review.
+   - **No AI co-author or attribution lines** in commits or pull requests.
+     Claude Code, for example, adds `Co-Authored-By: Claude …` by default.
+     Remove it, and check before pushing:
+     `git log origin/master..HEAD --format=%B | grep -i co-authored-by`
+     must print nothing.
 5. Don't overwrite, revert, reformat, rename, delete or regenerate files
    outside your task. If the working tree differs from what you expected,
    **stop and report it**. Never try to "make the repository clean".
 
 **Evidence**
 6. **Preserve evidence:**
-   - the 15 intentional untracked M1 logs under `results/acceptance/m1/`;
+   - the 15 intentional untracked M1 logs under `results/acceptance/m1/`
+     (they exist on the owner's machine only);
    - everything in `results/raw/`;
    - every existing `results/acceptance/*` directory.
 
@@ -77,8 +90,9 @@ one action never carries over to the next.
 8. **Never silently weaken an assertion,** invariant, precondition or
    acceptance criterion to make a test pass. If a test is wrong, say so,
    explain why, and change it openly, with approval.
-9. **Uncommitted S3.1/S3.2 work is not accepted.** Don't describe it, or
-   build on it, as if it were (see
+9. **The S3.1/S3.2 work on `wip/s3.2-network` is not accepted.** Don't
+   merge it into `master`, and don't describe it, or build on it, as if it
+   were accepted (see
    [CURRENT_STATUS_AND_ROADMAP.md](CURRENT_STATUS_AND_ROADMAP.md)). Never call
    something production-ready because it compiles or passes unit tests.
 
@@ -163,19 +177,25 @@ and [GLOSSARY.md](GLOSSARY.md):
    instead of silently picking one side.
 3. **Inspect the repository state:**
    ```sh
-   git branch --show-current
+   git fetch origin
+   git status -sb               # branch, and ahead/behind GitHub
    git log -1 --oneline
    git status --short
    git diff --stat
    git diff --cached --stat     # should be empty
    ```
-4. **Compare with the last recorded baseline** (2026-10-19):
-   - HEAD `699c2c8` (S2.6);
-   - S3.1/S3.2 uncommitted and not accepted;
-   - nothing staged.
+4. **Compare with the expected baseline** (last updated 2026-10-19):
+   - `origin/master` contains everything through S2.6 and the onboarding
+     docs;
+   - `origin/wip/s3.2-network` holds S3.1/S3.2, not accepted;
+   - your task branch was created from the branch named in your task;
+   - nothing is staged.
 
-   If the state differs from what your task assumes, stop and report it
-   before doing anything else.
+   Commit hashes cited in older documents predate the 2026-10-19 history
+   rewrite; translate them with
+   [`docs/commit-hash-map.md`](../commit-hash-map.md). If the state differs
+   from what your task assumes, stop and report it before doing anything
+   else.
 5. **Classify what you find,** separately:
    - committed;
    - uncommitted;
@@ -207,7 +227,12 @@ Authorized test scope:    <e.g. "documentation validation only" | "unprivileged:
                            after the memory checklist">
 Completion boundary:      <DOCUMENTATION ONLY | PLAN ONLY | IMPLEMENTATION ONLY |
                            IMPLEMENTATION AND TESTS | OTHER: ...>
-Commit authorization:     NONE   (unless the owner writes otherwise here)
+Working branch:           <your branch, e.g. <name>/schema-review, created from master
+                           (or from wip/s3.2-network for S3.2 work)>
+Commit authorization:     NONE   (or, if the owner writes it here: "commit and push to
+                           my working branch only; open a draft PR; no merge")
+
+No AI co-author or attribution lines in commits or PRs.
 
 Begin with a read-only inspection (§3). Do not modify any file yet. Your first response
 must contain the seven items of §5.1 of the protocol. Then wait for explicit
@@ -381,10 +406,59 @@ Rules:
 - **Don't let an assistant edit files owned by someone else** without
   coordination.
 - **Never run two assistants or sessions in the same working tree** at the
-  same time. Use separate branches or worktrees (only when authorized), and
-  merge by human review.
+  same time. Each person works in their own clone, on their own branch
+  (§7.3), and changes meet only through reviewed pull requests.
 - **Never run two privileged test runs at once:** they share kernel state,
   `make` artifacts and memory.
+
+### 7.3 GitHub workflow: branches and pull requests
+
+The repository is https://github.com/guruprasadvv/ProcessPulse. Setup is in
+[SETUP_AND_TESTING.md §2](SETUP_AND_TESTING.md#2-get-the-code-clone-from-github).
+
+```
+ master ──●───────────────────────────────●──   (only the owner merges, after review)
+           \                             ↑
+            ●──●──●  <you>/<task>  ── draft PR ── review ── ready ──┘
+```
+
+1. **Start from an up-to-date base:**
+   ```sh
+   git fetch origin
+   git switch -c <you>/<short-task> origin/master   # or origin/wip/s3.2-network for S3.2 work
+   ```
+2. **Work in small commits** on that branch, only if your task grants
+   commit authorization. Stage explicit paths
+   (`git add path/one path/two`), and write clear messages with no AI
+   co-author lines.
+3. **Before pushing,** check that nothing unintended is included. If you
+   started from the WIP branch, use `origin/wip/s3.2-network` instead of
+   `origin/master` here.
+   ```sh
+   git status --short
+   git log origin/master..HEAD --stat
+   git log origin/master..HEAD --format=%B | grep -i co-authored-by   # must print nothing
+   ```
+4. **Push your branch only:** `git push -u origin <you>/<short-task>`.
+5. **Open a draft pull request** into the branch you started from. Use
+   **Create draft pull request**, not "Create pull request". The
+   description must say:
+   - what changed and why;
+   - the exact test commands and results;
+   - what was **not** run, and why;
+   - risks and open questions.
+
+   Mark it **Ready for review** only when the definition of done (§8) is met.
+6. **Keep your branch current:** `git fetch origin`, then
+   `git merge origin/master`. Don't rebase or force-push a branch that
+   others may have pulled.
+7. **The owner reviews and merges.** After the merge, delete your branch
+   (on GitHub, and locally with `git branch -d <you>/<short-task>`).
+
+GitHub shows a yellow **"had recent pushes … Compare & pull request"**
+banner after any push. It is only a suggestion. In particular, **don't
+merge `wip/s3.2-network`** until S3.2 is accepted (see
+[CURRENT_STATUS_AND_ROADMAP.md](CURRENT_STATUS_AND_ROADMAP.md)).
 
 ## 8. Definition of done
 
@@ -408,9 +482,11 @@ A task is **done** only when all of these hold. Otherwise report it as
 - [ ] No unrelated work or evidence was damaged: the 15 M1 logs,
   `results/raw/` and `results/acceptance/*` are intact.
 - [ ] Remaining limitations and follow-up work are written down.
-- [ ] The final git state is reported. **Nothing is staged or committed**
-  unless authorized. The reviewer decides what is committed, and with what
-  message.
+- [ ] The final git state is reported. **Nothing is staged, committed or
+  pushed** unless authorized. If it was authorized, the work is on your own
+  branch with a draft pull request, contains no AI co-author lines, and
+  nothing was pushed to `master` or `wip/s3.2-network`. The owner decides
+  what is merged.
 
 ## 9. Copy-paste prompts
 
